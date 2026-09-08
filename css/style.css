@@ -1,0 +1,339 @@
+:root {
+  --bg: #f4f6f8;
+  --panel: #ffffff;
+  --ink: #10151c;
+  --ink-2: #48525f;
+  --ink-3: #7b8694;
+  --line: #e6eaef;
+  --line-2: #d6dce4;
+  --accent: #2563eb;
+  --accent-soft: #eff4ff;
+  --good: #0f9960;
+  --warn-soft: #fff8e6;
+  --warn-line: #f0dfb5;
+  --warn-ink: #7a5308;
+  --bad: #d33d33;
+  --bad-soft: #fdefee;
+  --r: 10px;
+  --r-sm: 7px;
+  --shadow: 0 1px 2px rgba(16, 21, 28, 0.05), 0 4px 12px rgba(16, 21, 28, 0.06);
+  --shadow-lg: 0 2px 6px rgba(16, 21, 28, 0.10), 0 12px 28px rgba(16, 21, 28, 0.12);
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  font: 14px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  color: var(--ink);
+  background: var(--bg);
+}
+
+#shell { display: flex; height: 100%; }
+
+#panel {
+  width: 388px;
+  min-width: 388px;
+  overflow-y: auto;
+  background: var(--panel);
+  border-right: 1px solid var(--line);
+  padding: 22px 22px 32px;
+}
+
+#map { flex: 1; min-width: 0; position: relative; }
+
+header h1 {
+  margin: 0 0 18px;
+  font-size: 20px;
+  font-weight: 640;
+  letter-spacing: -0.02em;
+}
+
+/* ------------------------------------------------------- map tool bar */
+.toolbar {
+  position: absolute;
+  z-index: 500;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 3px;
+  padding: 4px;
+  background: rgba(255, 255, 255, 0.94);
+  backdrop-filter: blur(8px);
+  border: 1px solid var(--line-2);
+  border-radius: 12px;
+  box-shadow: var(--shadow-lg);
+}
+.tool {
+  position: relative;
+  display: flex; align-items: center; gap: 6px;
+  padding: 7px 12px;
+  font: inherit; font-size: 13px; font-weight: 520;
+  color: var(--ink-2);
+  background: transparent; border: 0; border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.tool:hover { background: #eef1f5; color: var(--ink); }
+/* Hairline between the pan tool, the three shape tools and the start pin, so
+   five buttons still read as three groups. */
+.tool-sep {
+  flex: 0 0 auto; align-self: stretch;
+  width: 1px; margin: 3px 2px;
+  background: var(--line-2);
+}
+.tool.active { background: var(--accent); color: #fff; }
+.tool svg {
+  width: 17px; height: 17px; flex: 0 0 auto;
+  fill: none; stroke: currentColor; stroke-width: 1.7;
+  stroke-linecap: round; stroke-linejoin: round;
+}
+.tool .check {
+  width: 14px; height: 14px; stroke-width: 3;
+  color: var(--good); margin-left: 1px;
+}
+.tool.active .check { color: #b6f5d5; }
+
+/* ------------------------------------------------------------- start pin */
+.start-pin svg {
+  width: 60px; height: 60px;
+  fill: var(--accent);
+  stroke: #fff; stroke-width: 1.6;
+  stroke-linejoin: round;
+  filter: drop-shadow(0 2px 4px rgba(16, 21, 28, 0.35));
+}
+.start-pin circle { fill: #fff; stroke: none; }
+
+/* ---------------------------------------------------------------- tiles */
+.tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.tiles + .tiles { margin-top: 8px; }
+.tile {
+  padding: 9px 11px;
+  background: #f7f9fb;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  min-width: 0;
+}
+.tile.accent { background: var(--accent-soft); border-color: #dbe6fe; }
+.tile-label {
+  display: block; font-size: 10.5px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.05em; color: var(--ink-3);
+}
+.tile-value {
+  display: block; margin-top: 2px;
+  font-size: 15px; font-weight: 560;
+  font-variant-numeric: tabular-nums;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.tiles.four .tile-value { font-size: 17px; }
+.muted { color: var(--ink-3); font-weight: 400; }
+
+/* --------------------------------------------------------------- blocks */
+.block { margin-top: 24px; }
+.block h2 {
+  margin: 0 0 12px;
+  font-size: 11px; font-weight: 650;
+  text-transform: uppercase; letter-spacing: 0.07em;
+  color: var(--ink-3);
+}
+
+.hint { margin: 10px 0 0; font-size: 12.5px; color: var(--ink-2); }
+
+/* -------------------------------------------------------------- buttons */
+.primary {
+  display: block;
+  width: 100%; margin-top: 22px; padding: 12px;
+  font: inherit; font-size: 15px; font-weight: 580;
+  color: #fff; background: var(--accent);
+  border: 0; border-radius: var(--r);
+  cursor: pointer; box-shadow: var(--shadow);
+  transition: background 0.12s ease, opacity 0.12s ease;
+}
+.primary:hover:not(:disabled) { background: #1d4fd7; }
+.primary:disabled { opacity: 0.4; cursor: not-allowed; box-shadow: none; }
+
+/* --------------------------------------------------------------- inputs */
+.field { display: block; }
+.field + .field, .field + .switch, .segmented + .field { margin-top: 16px; }
+.block > .field:not(:last-child) { margin-bottom: 16px; }
+.field > span {
+  display: block; font-size: 12px; color: var(--ink-2); margin-bottom: 5px;
+}
+.field input {
+  width: 100%; font: inherit; padding: 8px 10px;
+  color: var(--ink); background: #fff;
+  border: 1px solid var(--line-2); border-radius: var(--r-sm);
+  font-variant-numeric: tabular-nums;
+}
+.field input:focus {
+  outline: 0; border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.14);
+}
+.field input.invalid {
+  border-color: var(--bad); box-shadow: 0 0 0 3px rgba(211, 61, 51, 0.12);
+}
+
+/* ---------------------------------------------------------- segmented */
+.segmented {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 3px;
+  padding: 3px;
+  background: #eef1f5; border-radius: var(--r-sm);
+}
+.segmented label { display: block; position: relative; cursor: pointer; }
+.segmented input { position: absolute; opacity: 0; pointer-events: none; }
+.segmented span {
+  display: block; padding: 7px 6px; text-align: center;
+  font-size: 13px; font-weight: 520; color: var(--ink-2);
+  border-radius: 5px;
+  transition: background 0.12s ease, color 0.12s ease, box-shadow 0.12s ease;
+}
+.segmented label:hover span { color: var(--ink); }
+.segmented input:checked + span {
+  background: #fff; color: var(--ink); font-weight: 580;
+  box-shadow: 0 1px 2px rgba(16, 21, 28, 0.10);
+}
+.segmented input:focus-visible + span {
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
+/* --------------------------------------------------------------- switch */
+.switch {
+  display: flex; gap: 10px; align-items: center;
+  margin-bottom: 16px; cursor: pointer; user-select: none;
+}
+.switch input { position: absolute; opacity: 0; pointer-events: none; }
+.switch .track {
+  flex: 0 0 auto; position: relative;
+  width: 36px; height: 21px; border-radius: 11px;
+  background: #c8d0da; transition: background 0.16s ease;
+}
+.switch .track::after {
+  content: ""; position: absolute; top: 3px; left: 3px;
+  width: 15px; height: 15px; border-radius: 50%; background: #fff;
+  transition: transform 0.16s ease;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.22);
+}
+.switch input:checked + .track { background: var(--accent); }
+.switch input:checked + .track::after { transform: translateX(15px); }
+.switch input:focus-visible + .track {
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.2);
+}
+.switch-label { font-size: 13.5px; font-weight: 520; }
+
+/* -------------------------------------------------------------- notices */
+.warn, .error {
+  padding: 10px 12px; border-radius: var(--r-sm);
+  font-size: 12.5px; border: 1px solid;
+}
+.warn { margin-top: 10px; background: var(--warn-soft); border-color: var(--warn-line); color: var(--warn-ink); }
+.error { margin-top: 12px; background: var(--bad-soft); border-color: #f6cdc9; color: var(--bad); }
+
+/* ------------------------------------------------------------- progress */
+.progress { margin-top: 14px; }
+.bar { height: 5px; border-radius: 3px; background: #e6eaef; overflow: hidden; }
+.fill {
+  height: 100%; width: 0; border-radius: 3px;
+  background: var(--accent); transition: width 0.3s ease;
+}
+.fill.indeterminate { width: 34%; animation: slide 1.15s ease-in-out infinite alternate; }
+@keyframes slide { from { margin-left: 0; } to { margin-left: 66%; } }
+.progress-text { margin-top: 7px; font-size: 12.5px; color: var(--ink-2); }
+
+.hidden { display: none !important; }
+
+.leaflet-container { background: #e7ebef; }
+
+/* Leaflet gives every drawn path `cursor: pointer`, which would say "click me"
+   right where you are trying to start the next shape. While a draw tool is
+   active the whole map keeps the drawing cursor, paths included. */
+#map.drawing,
+#map.drawing .leaflet-container,
+#map.drawing .leaflet-interactive { cursor: crosshair; }
+#map.pinning,
+#map.pinning .leaflet-container,
+#map.pinning .leaflet-interactive { cursor: pointer; }
+/* ... but the panels floating on top of the map are still controls. */
+#map .toolbar, #map .legend { cursor: default; }
+#map .tool, #map .legend-item { cursor: pointer; }
+
+/* Keep Leaflet's own controls clear of the centred toolbar. */
+.leaflet-top.leaflet-left { margin-top: 2px; }
+
+/* -------------------------------------------------------------- route arrows */
+/* Leaflet owns the marker element's transform for positioning, so the rotation
+   has to go on something inside it. */
+.route-arrow i {
+  display: block;
+  width: 14px; height: 14px;
+  transform-origin: 50% 50%;
+}
+.route-arrow svg {
+  width: 14px; height: 14px;
+  fill: none; stroke: currentColor; stroke-width: 2.2;
+  stroke-linecap: round; stroke-linejoin: round;
+  filter: drop-shadow(0 0 1.5px rgba(255, 255, 255, 0.95));
+}
+
+/* ------------------------------------------------------------ session legend */
+.legend {
+  position: absolute;
+  z-index: 500;
+  top: 14px;
+  right: 14px;
+  width: 200px;
+  max-height: calc(100% - 28px);
+  padding: 4px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: rgba(255, 255, 255, 0.94);
+  backdrop-filter: blur(8px);
+  border: 1px solid var(--line-2);
+  border-radius: 12px;
+  box-shadow: var(--shadow-lg);
+}
+.legend-item {
+  display: flex; align-items: center; gap: 9px;
+  width: 100%; padding: 6px 8px;
+  font: inherit; text-align: left;
+  color: var(--ink);
+  background: transparent; border: 0; border-radius: 8px;
+  transition: background 0.12s ease;
+}
+.legend-item:hover, .legend-item.active { background: #eef1f5; }
+/* Pinned by a click, so it survives the pointer moving away. */
+.legend-item.pinned { background: var(--accent-soft); }
+.legend-item.pinned .legend-name { font-weight: 680; }
+.legend-item:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.legend-item .swatch {
+  flex: 0 0 auto;
+  width: 11px; height: 11px; border-radius: 3px;
+  box-shadow: inset 0 0 0 1px rgba(16, 21, 28, 0.18);
+}
+.legend-text { min-width: 0; }
+.legend-name {
+  display: block; font-size: 12.5px; font-weight: 480;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.legend-item.active .legend-name { font-weight: 680; }
+.legend-meta {
+  display: block; font-size: 11px; color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 860px) {
+  #shell { flex-direction: column; }
+  #panel {
+    width: 100%; min-width: 0; border-right: 0;
+    border-bottom: 1px solid var(--line); max-height: 56%;
+  }
+  #map { min-height: 44vh; }
+  .toolbar { top: 10px; }
+  .tool span { display: none; }
+  .tool { padding: 8px 10px; }
+  .tool-sep { margin: 3px 0; }
+  /* Below the toolbar rather than beside it - there is no room for both. */
+  .legend { top: 56px; right: 10px; width: 168px; max-height: calc(100% - 70px); }
+}

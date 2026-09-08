@@ -1,0 +1,877 @@
+/* Routile frontend: drag out a shape, drop a start pin, compute, then drive. */
+
+import * as config from './config.js';
+import { Area } from './area.js';
+import { gpxDocument, gpxZip } from './gpx.js';
+import { estimate } from './stats.js';
+
+const $ = (id) => document.getElementById(id);
+
+// The three ways to draw. Each one is a full drag gesture: press, move, release.
+const SHAPES = ['rect', 'circle', 'freehand'];
+
+// One colour per session, ordered by how well each reads on an OSM basemap.
+// Violet first: OSM Carto paints primary roads orange and trunk roads salmon,
+// so an orange route is easy to mistake for the map's own road colouring - that
+// is exactly what made a perfectly continuous route look "disconnected". Blue
+// is left out entirely, since the drawn area is blue.
+const SESSION_COLORS = [
+  '#7c3aed', '#0d9488', '#c026d3', '#ea580c', '#65a30d',
+  '#e11d48', '#0284c7', '#ca8a04', '#059669', '#be123c',
+];
+const sessionColor = (i) => SESSION_COLORS[i % SESSION_COLORS.length];
+
+const ROUTE_WEIGHT = 3;
+const ROUTE_WEIGHT_HOT = 6.5;
+
+// Half a carriageway. Each pass is drawn this far to the right of its own
+// direction of travel, so a street driven both ways shows as two lines rather
+// than two identical lines on top of each other.
+const OFFSET_M = 4.5;
+const ARROW_SPACING_M = 130;
+const ARROW_ZOOM = 15;      // below this an arrow is smaller than the junction
+const POINT_ZOOM = 16;      // waypoints are dense; they need more room still
+
+const state = {
+  shape: null,         // the drawn area, as the pipeline expects it
+  shapeLayer: null,
+  startLatLng: null,
+  startMarker: null,
+  routeLayers: [],     // one polyline per session, index-aligned with the legend
+  sessionPoints: [],   // the offset points behind each of those polylines
+  arrowsBySession: [],
+  arrowLayer: null,
+  pointLayer: null,
+  hovered: null,       // previewed by the pointer
+  pinned: null,        // clicked, and stays until dismissed
+  mode: 'rect',        // rect | circle | freehand | pan | pin
+  lastShape: 'rect',   // which tool a shift+drag uses while panning
+  jobId: 0,
+  result: null,
+  estimateTimer: null,
+  progress: null,      // {phase, message, fraction} of the running job
+  started: 0,
+  ticker: null,
+};
+
+/* ------------------------------------------------------------------ map */
+// boxZoom off: Leaflet binds shift+drag to box zoom, which would fight
+// shift+drag drawing.
+const map = L.map('map', { zoomControl: true, boxZoom: false })
+  .setView([48.148, 17.107], 14);
+
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  maxZoom: 19,
+  attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+}).addTo(map);
+
+const cssVar = (name) =>
+  getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+
+// interactive:false throughout: the drawn area is a backdrop, not a control.
+// Left interactive it would take the pointer cursor and swallow hovers while
+// you are trying to draw the next shape on top of it.
+const AREA_STYLE = () => ({
+  color: cssVar('--accent'), weight: 2, fillOpacity: 0.08, interactive: false,
+});
+const DRAFT_STYLE = () => ({
+  color: cssVar('--accent'), weight: 2, fillOpacity: 0.1, dashArray: '5,4',
+  interactive: false,
+});
+
+// Same glyph as the Start button in the toolbar, so the map marker and the
+// control that places it read as the same thing.
+const START_ICON = L.divIcon({
+  className: 'start-pin',
+  html: '<svg viewBox="0 0 24 24" aria-hidden="true">'
+      + '<path d="M12 21s6.5-6.2 6.5-11a6.5 6.5 0 1 0-13 0C5.5 14.8 12 21 12 21z"/>'
+      + '<circle cx="12" cy="10" r="2.6"/></svg>',
+  iconSize: [60, 60],
+  iconAnchor: [30, 54],      // the pin's tip, not its centre, marks the spot
+  tooltipAnchor: [0, -48],
+});
+
+// These sit inside the map container, so Leaflet must not treat clicks and
+// drags on them as map gestures.
+for (const id of ['toolbar', 'legend']) {
+  L.DomEvent.disableClickPropagation($(id));
+  L.DomEvent.disableScrollPropagation($(id));
+}
+
+// Arrows and waypoint dots are rebuilt for the visible area on every pan and
+// zoom, so their cost is set by the screen rather than by the route's length.
+state.arrowLayer = L.layerGroup().addTo(map);
+state.pointLayer = L.layerGroup().addTo(map);
+map.on('moveend zoomend', () => refreshDetail());
+
+/* -------------------------------------------------------------- drawing */
+// One drag gesture, three shapes. `drag.tool` is fixed at mousedown so a key
+// released mid-drag cannot change what is being drawn.
+let drag = null;   // { tool, from, points, layer, ring, closing }
+
+const MIN_DRAG_PX = 12;        // below this, a drag is an accidental click
+const FREEHAND_STEP_PX = 5;    // sampling distance while drawing by hand
+const FREEHAND_SIMPLIFY_PX = 3;
+const SNAP_PX = 22;            // radius of the "release here to close" ring
+const SNAP_MIN_POINTS = 6;     // don't offer to close before a loop exists
+
+function activeTool(ev) {
+  if (SHAPES.includes(state.mode)) return state.mode;
+  // Shift+drag draws without leaving pan mode, using the last shape picked.
+  if (state.mode === 'pan' && ev && ev.originalEvent && ev.originalEvent.shiftKey) {
+    return state.lastShape;
+  }
+  return null;
+}
+
+map.on('mousedown', (ev) => {
+  const tool = activeTool(ev);
+  if (!tool) return;
+  if (drag) discardDraft();
+
+  map.dragging.disable();
+  drag = { tool, from: ev.latlng, points: [ev.latlng], layer: null,
+           ring: null, closing: false };
+
+  if (tool === 'rect') {
+    drag.layer = L.rectangle(L.latLngBounds(ev.latlng, ev.latlng), DRAFT_STYLE());
+  } else if (tool === 'circle') {
+    drag.layer = L.circle(ev.latlng, { radius: 1, ...DRAFT_STYLE() });
+  } else {
+    drag.layer = L.polyline([ev.latlng], DRAFT_STYLE());
+    // A ring at the start showing where to finish. Without it the shape closes
+    // with a straight line from wherever you happened to stop, which is how a
+    // careful outline ends up with a spike across the map.
+    drag.ring = L.circleMarker(ev.latlng, {
+      radius: SNAP_PX, color: cssVar('--accent'), weight: 1.5,
+      dashArray: '4,3', fillOpacity: 0.06, interactive: false,
+    }).addTo(map);
+  }
+  drag.layer.addTo(map);
+});
+
+map.on('mousemove', (ev) => {
+  if (!drag) return;
+  if (drag.tool === 'rect') {
+    drag.layer.setBounds(L.latLngBounds(drag.from, ev.latlng));
+  } else if (drag.tool === 'circle') {
+    drag.layer.setRadius(drag.from.distanceTo(ev.latlng));
+  } else {
+    // Sampled rather than recording every mousemove: a slow hand emits
+    // hundreds of points a second, and the outline is smoothed at the end.
+    const last = drag.points[drag.points.length - 1];
+    if (pixelGap(last, ev.latlng) >= FREEHAND_STEP_PX) drag.points.push(ev.latlng);
+    setClosing(withinSnap(ev.latlng));
+    drag.layer.setLatLngs(
+      drag.closing ? drag.points.concat([drag.from]) : drag.points
+    );
+  }
+});
+
+function withinSnap(latlng) {
+  return drag.points.length >= SNAP_MIN_POINTS
+    && pixelGap(drag.from, latlng) <= SNAP_PX;
+}
+
+function setClosing(closing) {
+  if (drag.closing === closing) return;
+  drag.closing = closing;
+  drag.ring.setStyle(closing
+    ? { fillOpacity: 0.28, weight: 2.5, dashArray: null }
+    : { fillOpacity: 0.06, weight: 1.5, dashArray: '4,3' });
+}
+
+function pixelGap(a, b) {
+  return map.latLngToContainerPoint(a).distanceTo(map.latLngToContainerPoint(b));
+}
+
+function discardDraft() {
+  if (!drag) return;
+  if (drag.layer) map.removeLayer(drag.layer);
+  if (drag.ring) map.removeLayer(drag.ring);
+  drag = null;
+  map.dragging.enable();
+}
+
+function finishDrag(latlng) {
+  if (!drag) return;
+  const { tool, from, points, closing } = drag;
+  discardDraft();
+  if (!latlng) return;      // cancelled: Escape, or released off the map
+
+  if (tool === 'rect') {
+    const bounds = L.latLngBounds(from, latlng);
+    if (pixelGap(bounds.getNorthWest(), bounds.getSouthEast()) < MIN_DRAG_PX) return;
+    setShape({
+      type: 'rect',
+      west: bounds.getWest(), south: bounds.getSouth(),
+      east: bounds.getEast(), north: bounds.getNorth(),
+    });
+  } else if (tool === 'circle') {
+    // Half the rectangle's threshold: this is a radius, not a diagonal.
+    if (pixelGap(from, latlng) < MIN_DRAG_PX / 2) return;
+    setShape({
+      type: 'circle',
+      lat: from.lat, lon: from.lng, radius_m: from.distanceTo(latlng),
+    });
+  } else {
+    // Released inside the ring: close on the start point exactly, rather than
+    // on wherever the pointer drifted to inside it.
+    const raw = closing ? points : points.concat([latlng]);
+    const outline = simplifyOutline(raw);
+    if (outline.length < 3) return;
+    setShape({ type: 'freehand', points: outline.map((p) => [p.lat, p.lng]) });
+  }
+}
+
+function simplifyOutline(latlngs) {
+  // Simplified in screen pixels, which is where the wobble actually is: a 3 px
+  // tolerance drops the hand tremor and keeps every deliberate turn, at any
+  // zoom level.
+  const pts = latlngs.map((p) => map.latLngToContainerPoint(p));
+  return L.LineUtil.simplify(pts, FREEHAND_SIMPLIFY_PX)
+    .map((p) => map.containerPointToLatLng(p));
+}
+
+map.on('mouseup', (ev) => finishDrag(ev.latlng));
+
+// A release outside the map never reaches Leaflet, which would leave the drag
+// stuck and panning disabled. Cancel on the document instead.
+document.addEventListener('mouseup', (ev) => {
+  if (!drag) return;
+  if (ev.target.closest && ev.target.closest('#map')) return;
+  finishDrag(null);
+});
+document.addEventListener('keydown', (ev) => {
+  if (ev.key === 'Escape') finishDrag(null);
+});
+
+map.on('click', (ev) => {
+  if (state.mode === 'pin') {
+    setStart(ev.latlng);
+    setMode(state.lastShape);
+    return;
+  }
+  // Reached only when the click missed every route line - those stop the event
+  // themselves - so this is the "clicked empty map" case: let go.
+  if (state.pinned !== null) pin(null);
+});
+
+/* ------------------------------------------------------- the drawn area */
+function setShape(shape) {
+  // One shape at a time: drawing again replaces whatever was there.
+  state.shape = shape;
+  if (state.shapeLayer) map.removeLayer(state.shapeLayer);
+  state.shapeLayer = shapeLayer(shape).addTo(map);
+
+  clearRoute();
+  $('area-info').classList.remove('muted');
+  $('area-info').textContent = `${areaKm2(shape).toFixed(2)} km²`;
+  $('compute').disabled = false;
+  scheduleEstimate();
+}
+
+function shapeLayer(shape) {
+  if (shape.type === 'rect') {
+    return L.rectangle(
+      L.latLngBounds([shape.south, shape.west], [shape.north, shape.east]),
+      AREA_STYLE(),
+    );
+  }
+  if (shape.type === 'circle') {
+    return L.circle([shape.lat, shape.lon],
+      { radius: shape.radius_m, ...AREA_STYLE() });
+  }
+  return L.polygon(shape.points, AREA_STYLE());
+}
+
+// Rough, for instant feedback the moment the mouse comes up; the estimate
+// overwrites it with the exact geodesic figure a moment later. Longitude
+// degrees shrink with latitude, hence the cosines - at latitude 48 a degree of
+// longitude is 74 km against 111 for latitude, so leaving that out would
+// overstate every area by about 1.5x.
+const KM_PER_DEG = 111.32;
+
+function areaKm2(shape) {
+  if (shape.type === 'circle') {
+    return Math.PI * (shape.radius_m / 1000) ** 2;
+  }
+  if (shape.type === 'rect') {
+    const midLat = (shape.north + shape.south) / 2;
+    return (shape.north - shape.south) * KM_PER_DEG
+      * (shape.east - shape.west) * KM_PER_DEG * Math.cos(rad(midLat));
+  }
+  // Shoelace, with both axes converted to kilometres first.
+  const pts = shape.points;
+  const midLat = pts.reduce((sum, p) => sum + p[0], 0) / pts.length;
+  const kx = KM_PER_DEG * Math.cos(rad(midLat));
+  let twice = 0;
+  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+    twice += (pts[j][1] * kx) * (pts[i][0] * KM_PER_DEG)
+           - (pts[i][1] * kx) * (pts[j][0] * KM_PER_DEG);
+  }
+  return Math.abs(twice) / 2;
+}
+
+function rad(deg) { return deg * Math.PI / 180; }
+
+function setStart(latlng) {
+  state.startLatLng = latlng;
+  if (state.startMarker) map.removeLayer(state.startMarker);
+  state.startMarker = L.marker(latlng, { icon: START_ICON, keyboard: false })
+    .addTo(map).bindTooltip('Start / finish');
+  $('pin-info').classList.remove('muted');
+  $('pin-info').textContent =
+    `${latlng.lat.toFixed(4)}, ${latlng.lng.toFixed(4)}`;
+  $('pin-check').classList.remove('hidden');
+}
+
+const TOOL_BUTTONS = {
+  pan: 'mode-pan', rect: 'mode-rect', circle: 'mode-circle',
+  freehand: 'mode-freehand', pin: 'mode-pin',
+};
+
+function setMode(mode) {
+  state.mode = mode;
+  if (SHAPES.includes(mode)) state.lastShape = mode;
+  for (const [key, id] of Object.entries(TOOL_BUTTONS)) {
+    $(id).classList.toggle('active', mode === key);
+  }
+  const el = $('map');
+  el.classList.toggle('drawing', SHAPES.includes(mode));
+  el.classList.toggle('pinning', mode === 'pin');
+}
+
+for (const [key, id] of Object.entries(TOOL_BUTTONS)) {
+  $(id).onclick = () => setMode(key);
+}
+setMode('rect');
+
+/* ---------------------------------------------------------------- config */
+$('passes').max = String(config.PASSES_MAX);
+$(config.BOTH_DIRECTIONS_DEFAULT ? 'dir-both' : 'dir-oneway').checked = true;
+$('session').value = String(Math.round((config.SESSION_SECONDS_DEFAULT / 3600) * 100) / 100);
+
+function bothDirections() { return $('dir-both').checked; }
+
+function sessionEnabled() { return $('session-enabled').checked; }
+
+function syncSessionField() {
+  $('session-field').classList.toggle('hidden', !sessionEnabled());
+}
+syncSessionField();
+
+/* ------------------------------------------------------------ validation */
+function passesValue() {
+  const raw = $('passes').value.trim();
+  if (!/^\d+$/.test(raw)) return null;
+  const n = parseInt(raw, 10);
+  return n >= 1 ? n : null;
+}
+
+const NO_SPLIT_HOURS = 24;   // one session: a session is capped at 24 h
+
+function sessionHours() {
+  // Splitting off means one session covering the whole route.
+  if (!sessionEnabled()) return NO_SPLIT_HOURS;
+  // A positive decimal number of hours: "1.5", "0.75", "2". Comma accepted too,
+  // since a decimal comma is the norm across much of Europe.
+  const raw = $('session').value.trim().replace(',', '.');
+  if (!/^\d*\.?\d+$/.test(raw)) return null;
+  const h = parseFloat(raw);
+  return Number.isFinite(h) && h >= 0.1 && h <= NO_SPLIT_HOURS ? h : null;
+}
+
+function markValid(el, ok) { el.classList.toggle('invalid', !ok); }
+
+function validate() {
+  const passes = passesValue();
+  const hours = sessionHours();
+  markValid($('passes'), passes !== null);
+  markValid($('session'), !sessionEnabled() || hours !== null);
+  if (passes === null) return 'Passes must be a whole number of 1 or more.';
+  if (hours === null) return 'Session length must be a number of hours between 0.1 and 24.';
+  return null;
+}
+
+/* --------------------------------------------------------------- request */
+function payload() {
+  const body = {
+    shape: state.shape,
+    both_directions: bothDirections(),
+    passes: passesValue() || 1,
+    session_minutes: (sessionHours() || NO_SPLIT_HOURS) * 60,
+  };
+  if (state.startLatLng) {
+    body.start = { lat: state.startLatLng.lat, lon: state.startLatLng.lng };
+  }
+  return body;
+}
+
+function scheduleEstimate() {
+  clearTimeout(state.estimateTimer);
+  state.estimateTimer = setTimeout(runEstimate, 200);
+}
+
+/* Instant pre-flight guess, so a 13-hour result is never a surprise. */
+function runEstimate() {
+  if (!state.shape) return;
+  const card = $('estimate-card');
+
+  const problem = validate();
+  if (problem) {
+    card.classList.add('hidden');
+    showError(problem);
+    $('compute').disabled = true;
+    return;
+  }
+
+  let area;
+  try {
+    area = Area.fromShape(state.shape);
+    area.validate(config.AREA_CAP_KM2);
+  } catch (err) {
+    card.classList.add('hidden');
+    showError(err.message || 'That area cannot be used.');
+    $('compute').disabled = true;
+    return;
+  }
+  showError(null);
+  $('compute').disabled = false;
+  card.classList.remove('hidden');
+
+  // A circle or a freehand loop cannot be measured by the rough formula, so
+  // the exact geodesic area replaces the figure shown on mouse-up.
+  const km2 = area.areaKm2();
+  $('area-info').textContent = `${km2.toFixed(2)} km²`;
+  const d = estimate(km2, {
+    passes: passesValue() || 1,
+    bothDirections: bothDirections(),
+    sessionSeconds: Math.max((sessionHours() || NO_SPLIT_HOURS) * 60, 1) * 60,
+  });
+  $('est-km').textContent = `${Math.round(d.drive_km)} km`;
+  $('est-time').textContent = d.duration;
+  $('est-roads').textContent = `${Math.round(d.centerline_km)} km`;
+  $('est-sessions').textContent = sessionEnabled() ? d.sessions : '1';
+
+  const warn = $('est-warn');
+  if (km2 > config.AREA_WARN_KM2) {
+    warn.classList.remove('hidden');
+    warn.textContent = `Big area — roughly ${d.drive_km} km across `
+      + `${d.sessions} sessions. It will compute, but expect a long project.`;
+  } else {
+    warn.classList.add('hidden');
+  }
+}
+
+['passes', 'session', 'dir-oneway', 'dir-both', 'session-enabled'].forEach((id) => {
+  $(id).addEventListener('change', () => {
+    if (id === 'session-enabled') syncSessionField();
+    scheduleEstimate();
+  });
+  $(id).addEventListener('input', scheduleEstimate);
+});
+
+/* --------------------------------------------------------------- compute */
+// The pipeline runs in a worker so the page stays responsive while it works.
+const worker = new Worker(new URL('./worker.js', import.meta.url), { type: 'module' });
+
+worker.onmessage = (ev) => {
+  const msg = ev.data;
+  if (msg.id !== state.jobId) return;   // a job the user has since superseded
+  if (msg.type === 'progress') {
+    state.progress = msg;
+    renderProgress();
+  } else if (msg.type === 'done') {
+    finishJob();
+    state.result = msg.result;
+    renderResult(msg.result);
+    drawSessions(msg.result, msg.result.track || []);
+    if (msg.result.start) setStart(L.latLng(msg.result.start.lat, msg.result.start.lon));
+  } else if (msg.type === 'error') {
+    finishJob();
+    showError(friendlyError(msg.message));
+  }
+};
+
+worker.onerror = (ev) => {
+  finishJob();
+  showError('The compute worker failed to start. Serve this folder over http(s): '
+    + 'browsers refuse to run workers from a file:// page.');
+  console.error(ev);
+};
+
+$('compute').onclick = () => {
+  if (!state.shape) return;
+  const problem = validate();
+  if (problem) { showError(problem); return; }
+
+  showError(null);
+  clearRoute();
+  $('compute').disabled = true;
+  state.jobId += 1;
+  state.started = performance.now();
+  state.progress = { phase: 'queued', message: 'Starting…', fraction: 0 };
+  renderProgress();
+  clearInterval(state.ticker);
+  state.ticker = setInterval(renderProgress, 500);
+  worker.postMessage({ id: state.jobId, payload: payload() });
+};
+
+function finishJob() {
+  clearInterval(state.ticker);
+  state.ticker = null;
+  hideProgress();
+  $('compute').disabled = false;
+}
+
+function friendlyError(message) {
+  // Errors may arrive as "ErrorType: text"; the text is the useful part.
+  const m = String(message || '');
+  const colon = m.indexOf(': ');
+  return colon > 0 && colon < 40 ? m.slice(colon + 2) : m;
+}
+
+function renderProgress() {
+  const p = state.progress;
+  if (!p) return;
+  const box = $('progress');
+  box.classList.remove('hidden');
+  const fill = box.querySelector('.fill');
+  // Downloading and route-solving have no natural granularity, so they get a
+  // moving bar rather than a fake percentage.
+  const indeterminate = p.phase === 'balance' || p.phase === 'fetch';
+  fill.classList.toggle('indeterminate', indeterminate);
+  fill.style.width = indeterminate ? '' : `${Math.round((p.fraction || 0) * 100)}%`;
+  const elapsed = (performance.now() - state.started) / 1000;
+  const secs = elapsed >= 1 ? ` · ${elapsed.toFixed(0)}s` : '';
+  box.querySelector('.progress-text').textContent = `${p.message || p.phase}${secs}`;
+}
+
+function hideProgress() { $('progress').classList.add('hidden'); }
+
+function showError(msg) {
+  const box = $('error');
+  if (!msg) { box.classList.add('hidden'); return; }
+  box.classList.remove('hidden');
+  box.textContent = msg;
+}
+
+/* ---------------------------------------------------------------- render */
+function renderResult(res) {
+  $('stats-card').classList.remove('hidden');
+
+  const st = res.stats;
+  const cov = res.coverage;
+  const sessions = res.sessions;
+  $('summary').innerHTML = [
+    ['Distance', `${st.total_km} km`],
+    ['Driving', st.duration],
+    ['Sessions', sessions.length],
+    ['Roads covered', `${cov.centerline_km_covered} km`],
+    ['Coverage', `${cov.coverage_pct}%`],
+    ['Roads in area', `${cov.centerline_km_in_area} km`],
+    ['Unreachable', `${cov.km_dropped_not_strongly_connected} km`],
+    ['Fragments', Math.max(cov.strong_components - 1, 0)],
+  ].map(([label, value]) =>
+    `<div class="tile"><span class="tile-label">${label}</span>`
+    + `<span class="tile-value">${escapeHtml(String(value))}</span></div>`
+  ).join('');
+
+  // One button. A single session is a plain .gpx; several are zipped, because
+  // one 80,000-point track is more than most nav apps will take.
+  const many = sessions.length > 1;
+  $('download').textContent = many
+    ? `Download ${sessions.length} sessions (.zip)`
+    : 'Download route (.gpx)';
+  // Only apps that *follow a track* are named. Organic Maps draws the track
+  // but routes point-to-point with no intermediate stops, so it plans its own
+  // way to the finish and ignores the route entirely.
+  $('download-note').textContent = many
+    ? 'Open a file in OsmAnd (Navigation → Follow track), Locus Map or '
+      + 'Garmin and it drives every street in order.'
+    : 'Open it in OsmAnd (Navigation → Follow track), Locus Map or '
+      + 'Garmin and it drives every street in order.';
+}
+
+$('download').onclick = async () => {
+  const res = state.result;
+  if (!res) return;
+  const button = $('download');
+  button.disabled = true;
+  try {
+    const many = res.sessions.length > 1;
+    const blob = many
+      ? await gpxZip(res)
+      : new Blob([gpxDocument(res)], { type: 'application/gpx+xml' });
+    saveBlob(blob, many ? 'routile-sessions.zip' : 'routile-route.gpx');
+  } catch (err) {
+    showError(`Could not build the file: ${err.message}`);
+  } finally {
+    button.disabled = false;
+  }
+};
+
+function saveBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+}
+
+/* ----------------------------------------------------------------- route */
+/* The breadcrumb is one continuous list of points; `arc_start` maps a tour arc
+   to where it begins in that list, and each session knows the arcs it covers.
+   Slicing there rather than by distance keeps every session's line joined to
+   the next one exactly, with no gap and no overlap. */
+function sessionSlice(res, track, session) {
+  const starts = res.arc_start || [];
+  if (!starts.length || !session.arc_span) return null;
+  const at = (arc) => starts[Math.min(Math.max(arc, 0), starts.length - 1)];
+  const from = at(session.arc_span[0]);
+  const to = at(session.arc_span[1]);
+  return to > from ? track.slice(from, to + 1) : null;
+}
+
+/* Shift every point sideways, to the right of the direction of travel, the way
+   a map draws a dual carriageway.
+
+   Without this a street driven in both directions is two lines on top of each
+   other, i.e. indistinguishable from a street driven once - so "did it cover
+   both ways?" is a question the map cannot answer. Offsetting makes the second
+   pass appear beside the first, with its own arrows pointing back. It falls out
+   of the geometry, so it needs no extra data and works for three passes as
+   readily as two.
+
+   The offset is a fixed distance on the ground, not in pixels, so it stays a
+   real half-carriageway: invisible when zoomed out, clear when zoomed in. */
+function offsetRight(points, metres) {
+  const out = new Array(points.length);
+  for (let i = 0; i < points.length; i++) {
+    const before = points[Math.max(i - 1, 0)];
+    const after = points[Math.min(i + 1, points.length - 1)];
+    const lat = points[i][0];
+    const kx = Math.cos(rad(lat)) || 1e-6;
+    let east = (after[1] - before[1]) * kx;
+    let north = after[0] - before[0];
+    const len = Math.hypot(east, north);
+    if (!len) { out[i] = points[i]; continue; }
+    east /= len;
+    north /= len;
+    // Right of travel is the heading turned 90° clockwise: (north, -east).
+    out[i] = [
+      lat + (-east * metres) / KM_PER_DEG / 1000,
+      points[i][1] + (north * metres) / KM_PER_DEG / 1000 / kx,
+    ];
+  }
+  return out;
+}
+
+function bearingAt(points, i) {
+  const a = points[Math.max(i - 1, 0)];
+  const b = points[Math.min(i + 1, points.length - 1)];
+  const kx = Math.cos(rad(points[i][0])) || 1e-6;
+  return Math.atan2((b[1] - a[1]) * kx, b[0] - a[0]) * 180 / Math.PI;
+}
+
+function metresBetween(a, b) {
+  const kx = Math.cos(rad(a[0])) || 1e-6;
+  return Math.hypot((b[1] - a[1]) * kx, b[0] - a[0]) * KM_PER_DEG * 1000;
+}
+
+function drawSessions(res, track) {
+  clearRouteLayers();
+  const sessions = res.sessions;
+
+  sessions.forEach((session, i) => {
+    const raw = sessionSlice(res, track, session) || [];
+    if (raw.length < 2) return;
+    const points = offsetRight(raw, OFFSET_M);
+    const line = L.polyline(points, {
+      color: sessionColor(i), weight: ROUTE_WEIGHT, opacity: 0.85,
+    }).addTo(map);
+    line.on('mouseover', () => hover(i));
+    line.on('mouseout', () => hover(null));
+    line.on('click', (ev) => {
+      L.DomEvent.stopPropagation(ev);   // or the map clears it again immediately
+      pin(state.pinned === i ? null : i);
+    });
+    state.routeLayers[i] = line;
+    state.sessionPoints[i] = points;
+  });
+
+  buildLegend(sessions);
+  refreshDetail();
+
+  const drawn = state.routeLayers.filter(Boolean);
+  if (drawn.length) {
+    const bounds = drawn.reduce(
+      (acc, line) => (acc ? acc.extend(line.getBounds()) : line.getBounds()), null
+    );
+    map.fitBounds(bounds, { padding: [30, 30] });
+  }
+}
+
+/* Arrows and waypoint dots, drawn only for what is on screen and only once the
+   map is zoomed in far enough for them to mean anything. A 500 km route has
+   thousands of each; rebuilding just the visible ones keeps that irrelevant. */
+function refreshDetail() {
+  state.arrowLayer.clearLayers();
+  state.pointLayer.clearLayers();
+  state.arrowsBySession = [];
+  if (!state.routeLayers.length) return;
+
+  const zoom = map.getZoom();
+  const bounds = map.getBounds().pad(0.15);
+
+  if (zoom >= ARROW_ZOOM) {
+    state.sessionPoints.forEach((points, i) => {
+      if (!points) return;
+      const mine = [];
+      let since = ARROW_SPACING_M;      // one arrow at the very start
+      for (let n = 1; n < points.length; n++) {
+        since += metresBetween(points[n - 1], points[n]);
+        if (since < ARROW_SPACING_M) continue;
+        since = 0;
+        if (!bounds.contains(points[n])) continue;
+        mine.push(arrowAt(points, n, sessionColor(i)));
+      }
+      state.arrowsBySession[i] = mine;
+    });
+  }
+
+  if (zoom >= POINT_ZOOM && state.result) {
+    for (const wp of state.result.waypoints || []) {
+      if (!bounds.contains([wp.lat, wp.lon])) continue;
+      L.circleMarker([wp.lat, wp.lon], {
+        radius: 3.5, weight: 1.5, color: '#fff', fillColor: cssVar('--ink'),
+        fillOpacity: 0.9, interactive: false,
+      }).addTo(state.pointLayer);
+    }
+  }
+  applyHighlight(state.hovered !== null ? state.hovered : state.pinned);
+}
+
+function arrowAt(points, n, color) {
+  const marker = L.marker(points[n], {
+    interactive: false,
+    keyboard: false,
+    icon: L.divIcon({
+      className: 'route-arrow',
+      iconSize: [14, 14],
+      iconAnchor: [7, 7],
+      // The rotation goes on an inner element: Leaflet owns the marker's own
+      // transform for positioning and would overwrite it.
+      html: `<i style="transform:rotate(${bearingAt(points, n) - 90}deg);color:${color}">`
+          + '<svg viewBox="0 0 14 14" aria-hidden="true">'
+          + '<path d="M3 7h7M7.5 4l3 3-3 3"/></svg></i>',
+    }),
+  });
+  marker.addTo(state.arrowLayer);
+  return marker;
+}
+
+function buildLegend(sessions) {
+  const box = $('legend');
+  box.innerHTML = sessions.map((session, i) => {
+    const km = Number(session.km).toFixed(1);
+    return `<button type="button" class="legend-item" data-session="${i}" role="listitem">`
+      + `<span class="swatch" style="background:${sessionColor(i)}"></span>`
+      + '<span class="legend-text">'
+      + `<span class="legend-name">Session ${i + 1}</span>`
+      + `<span class="legend-meta">${km} km · ${humanMinutes(session.minutes)}</span>`
+      + '</span></button>';
+  }).join('');
+  box.classList.toggle('hidden', sessions.length === 0);
+
+  for (const item of box.querySelectorAll('.legend-item')) {
+    const i = Number(item.dataset.session);
+    item.addEventListener('mouseenter', () => hover(i, { scroll: false }));
+    item.addEventListener('mouseleave', () => hover(null));
+    item.addEventListener('focus', () => hover(i, { scroll: false }));
+    item.addEventListener('blur', () => hover(null));
+    item.addEventListener('click', () => pin(state.pinned === i ? null : i));
+  }
+}
+
+/* Two layers of the same highlight. Hovering previews a session; clicking pins
+   it so it survives the pointer moving away, which is what you want while
+   reading a leg off the map. Clicking it again, or clicking empty map, lets go.
+   With something pinned, moving off a hover falls back to it rather than to
+   nothing. */
+function hover(index, { scroll = true } = {}) {
+  state.hovered = index;
+  applyHighlight(index !== null ? index : state.pinned, { scroll });
+}
+
+function pin(index) {
+  state.pinned = index;
+  applyHighlight(index);
+  for (const item of $('legend').querySelectorAll('.legend-item')) {
+    item.classList.toggle('pinned', Number(item.dataset.session) === index);
+  }
+}
+
+function applyHighlight(index, { scroll = true } = {}) {
+  state.routeLayers.forEach((line, i) => {
+    if (!line) return;
+    const hot = i === index;
+    line.setStyle({
+      weight: hot ? ROUTE_WEIGHT_HOT : ROUTE_WEIGHT,
+      opacity: index === null || hot ? 0.85 : 0.22,
+    });
+    if (hot) line.bringToFront();
+  });
+
+  state.arrowsBySession.forEach((arrows, i) => {
+    if (!arrows) return;
+    const dim = index !== null && i !== index;
+    for (const marker of arrows) {
+      if (marker._icon) marker._icon.style.opacity = dim ? '0.2' : '1';
+    }
+  });
+
+  for (const item of $('legend').querySelectorAll('.legend-item')) {
+    const hot = Number(item.dataset.session) === index;
+    item.classList.toggle('active', hot);
+    // Keep the matching row visible when the pointer is out on the map and the
+    // legend has scrolled past it.
+    if (hot && scroll) item.scrollIntoView({ block: 'nearest' });
+  }
+}
+
+function humanMinutes(minutes) {
+  const total = Math.round(Number(minutes) || 0);
+  if (total < 60) return `${total} min`;
+  return `${Math.floor(total / 60)} h ${total % 60} min`;
+}
+
+function clearRouteLayers() {
+  for (const line of state.routeLayers) {
+    if (line) map.removeLayer(line);
+  }
+  state.routeLayers = [];
+  state.sessionPoints = [];
+  state.arrowsBySession = [];
+  state.arrowLayer.clearLayers();
+  state.pointLayer.clearLayers();
+  state.pinned = null;
+  state.hovered = null;
+}
+
+function clearRoute() {
+  clearRouteLayers();
+  $('legend').innerHTML = '';
+  $('legend').classList.add('hidden');
+  state.result = null;
+  $('stats-card').classList.add('hidden');
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
