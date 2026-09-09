@@ -26,8 +26,8 @@ const MIN_ZOOM = 4;
 const TILE_TIMEOUT_MS = 12_000;
 
 // The light theme's fixed colours, matching css/style.css.
-const ZONE = '#2563eb';
-const PIN = '#2563eb';
+const ZONE = '#35d29a';
+const PIN = '#35d29a';
 const PIN_RING = '#ffffff';
 const INK = '#10151c';
 const INK_2 = '#48525f';

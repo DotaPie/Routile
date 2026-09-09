@@ -5,7 +5,7 @@
 
 // Bump on ANY algorithm change, or the result cache will serve stale routes
 // and you will chase phantom bugs.
-export const ALGO_VERSION = '7';
+export const ALGO_VERSION = '8';
 
 // ---------------------------------------------------------------- area limits
 // No product-level cap: draw whatever you like. This ceiling is deliberately far
@@ -13,6 +13,19 @@ export const ALGO_VERSION = '7';
 // only so a nonsense request (a whole hemisphere) fails with a clear message
 // rather than grinding away at Overpass.
 export const AREA_CAP_KM2 = 50_000;
+
+// ------------------------------------------------------------- travel mode
+// Driving reads the speed limits off the map; walking has none to read, so the
+// whole network gets one pace. 4.8 km/h is the usual planning figure for an
+// adult walking on the flat, junctions and kerbs included.
+export const TRAVEL_MODE_DEFAULT = 'drive';
+export const WALK_KMH = 4.8;
+
+// Private roads are off by default: a street sweep means the public streets,
+// and the driveways and yards behind a gate are somebody's property. Turning
+// it on is a deliberate act - see roadFilter() in osm.js for exactly what it
+// admits.
+export const INCLUDE_PRIVATE_DEFAULT = false;
 
 // ---------------------------------------------------------------- OSM fetching
 // Fetch beyond the drawn shape so deadhead legs may leave it (what a human

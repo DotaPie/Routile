@@ -61,6 +61,26 @@
 
     <section class="block">
       <div class="field">
+        <span>Travel</span>
+        <div class="segmented" role="radiogroup" aria-label="Travel mode">
+          <label>
+            <input type="radio" name="travel" id="travel-drive" value="drive" checked>
+            <span>Driving</span>
+          </label>
+          <label>
+            <input type="radio" name="travel" id="travel-walk" value="walk">
+            <span>Walking</span>
+          </label>
+        </div>
+      </div>
+
+      <label class="switch">
+        <input type="checkbox" id="private-roads">
+        <span class="track" aria-hidden="true"></span>
+        <span class="switch-label">Include private roads</span>
+      </label>
+
+      <div class="field">
         <span>Direction</span>
         <div class="segmented" role="radiogroup" aria-label="Direction">
           <label>
@@ -108,7 +128,9 @@
 
   </aside>
 
-  <main id="map">
+  <main id="stage">
+    <div id="map"></div>
+
     <div id="topbar">
       <div id="toolbar" class="card toolbar" role="group" aria-label="Map tools">
         <button id="mode-pan" class="tool" aria-label="Pan the map">
@@ -148,8 +170,6 @@
       </div>
     </div>
 
-    <div id="legend" class="legend hidden" role="list" aria-label="Sessions"></div>
-
     <form id="search" class="card search" role="search">
       <svg class="search-icon" viewBox="0 0 24 24" aria-hidden="true">
         <circle cx="10.5" cy="10.5" r="6.5"/><path d="m15.4 15.4 4.1 4.1"/>
@@ -160,6 +180,8 @@
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h13M13 6.5 18.5 12 13 17.5"/></svg>
       </button>
     </form>
+
+    <div id="legend" class="legend hidden" role="list" aria-label="Sessions"></div>
   </main>
 </div>
 

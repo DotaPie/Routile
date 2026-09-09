@@ -17,6 +17,7 @@
   --accent-2: #46e0aa;
   --accent-soft: #14312a;
   --accent-line: #1e4a3d;
+  --accent-text: #35d29a;   /* the accent where it has to read as text */
   --on-accent: #06120e;
   --focus: rgba(53, 210, 154, 0.26);
   --good: #35d29a;
@@ -44,12 +45,13 @@
   --line-2: #d6dce4;
   --hover: #eef1f5;
   --field-bg: #ffffff;
-  --accent: #2563eb;
-  --accent-2: #1d4fd7;
-  --accent-soft: #eff4ff;
-  --accent-line: #dbe6fe;
-  --on-accent: #ffffff;
-  --focus: rgba(37, 99, 235, 0.16);
+  --accent: #35d29a;
+  --accent-2: #27bf8a;
+  --accent-soft: #e9faf3;
+  --accent-line: #bfeddb;
+  --accent-text: #0a7d5d;
+  --on-accent: #06120e;
+  --focus: rgba(53, 210, 154, 0.30);
   --good: #0f9960;
   --bad: #d33d33;
   --bad-soft: #fdefee;
@@ -83,7 +85,15 @@ html, body {
   padding: 22px 22px 32px;
 }
 
-#map { flex: 1; min-width: 0; position: relative; }
+/* The map and the things that float over it. On a desktop the search box and
+   the session list are absolutely positioned on top; on a phone they drop out
+   of the way below the map, so the map itself keeps most of the screen. */
+#stage {
+  flex: 1; min-width: 0; min-height: 0;
+  position: relative;
+  display: flex; flex-direction: column;
+}
+#map { flex: 1; min-height: 0; }
 
 /* ------------------------------------------------------------------ brand */
 #panel > header {
@@ -379,36 +389,34 @@ html, body {
    right where you are trying to start the next zone. While a draw tool is
    active the whole map keeps the drawing cursor, paths included. */
 #map.drawing,
-#map.drawing .leaflet-container,
 #map.drawing .leaflet-interactive { cursor: crosshair; }
+/* A finger drawing a zone must not also scroll the page or pinch the map. */
+#map.drawing { touch-action: none; }
 /* Placing the start carries the pin itself, tip on the hotspot, so it is
    obvious that the next click drops it rather than selects something. */
 #map.pinning,
-#map.pinning .leaflet-container,
 #map.pinning .leaflet-interactive {
   cursor: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='34'%20height='34'%20viewBox='0%200%2024%2024'%3E%3Cpath%20d='M12%2021s6.5-6.2%206.5-11a6.5%206.5%200%201%200-13%200C5.5%2014.8%2012%2021%2012%2021z'%20fill='%2335d29a'%20stroke='%230b1a15'%20stroke-width='1.5'/%3E%3Ccircle%20cx='12'%20cy='10'%20r='2.6'%20fill='%230b1a15'/%3E%3C/svg%3E") 17 30, crosshair;
 }
 :root[data-theme="light"] #map.pinning,
-:root[data-theme="light"] #map.pinning .leaflet-container,
 :root[data-theme="light"] #map.pinning .leaflet-interactive {
-  cursor: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='34'%20height='34'%20viewBox='0%200%2024%2024'%3E%3Cpath%20d='M12%2021s6.5-6.2%206.5-11a6.5%206.5%200%201%200-13%200C5.5%2014.8%2012%2021%2012%2021z'%20fill='%232563eb'%20stroke='%23ffffff'%20stroke-width='1.5'/%3E%3Ccircle%20cx='12'%20cy='10'%20r='2.6'%20fill='%23ffffff'/%3E%3C/svg%3E") 17 30, crosshair;
+  cursor: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='34'%20height='34'%20viewBox='0%200%2024%2024'%3E%3Cpath%20d='M12%2021s6.5-6.2%206.5-11a6.5%206.5%200%201%200-13%200C5.5%2014.8%2012%2021%2012%2021z'%20fill='%2335d29a'%20stroke='%23ffffff'%20stroke-width='1.5'/%3E%3Ccircle%20cx='12'%20cy='10'%20r='2.6'%20fill='%23ffffff'/%3E%3C/svg%3E") 17 30, crosshair;
 }
 /* Held middle or right mouse button: a temporary grab, whatever tool is armed. */
 #map.grabbing,
-#map.grabbing .leaflet-container,
 #map.grabbing .leaflet-interactive { cursor: grabbing; }
-/* ... but the panels floating on top of the map are still controls. */
-#map #topbar, #map #search, #map .legend { cursor: default; }
-#map .tool, #map .legend-item, #map .search-go { cursor: pointer; }
-#map .search input { cursor: text; }
+/* ... but the panels beside and over the map are still controls. */
+#stage #topbar, #stage #search, #stage .legend { cursor: default; }
+#stage .tool, #stage .legend-item, #stage .search-go { cursor: pointer; }
+#stage .search input { cursor: text; }
 
 /* ------------------------------------------------------ leaflet controls */
 /* The zoom buttons are dressed as the tool bar is - same glass card, same
    icon buttons, same hover - so the map has one family of controls. The
-   selectors carry #map to outrank Leaflet's own .leaflet-touch rules. */
+   selectors carry #stage to outrank Leaflet's own .leaflet-touch rules. */
 .leaflet-top .leaflet-control { margin-top: 14px; }
 .leaflet-left .leaflet-control { margin-left: 14px; }
-#map .leaflet-control-zoom {
+#stage .leaflet-control-zoom {
   display: flex; flex-direction: column; gap: 3px;
   padding: 4px;
   background: var(--glass);
@@ -417,25 +425,25 @@ html, body {
   border-radius: 12px;
   box-shadow: var(--shadow-lg);
 }
-#map .leaflet-control-zoom a {
+#stage .leaflet-control-zoom a {
   display: grid; place-items: center;
   width: 34px; height: 34px;
   color: var(--ink-2);
   background: transparent; border: 0; border-radius: 8px;
   transition: background 0.12s ease, color 0.12s ease;
 }
-#map .leaflet-control-zoom a:hover { background: var(--hover); color: var(--ink); }
-#map .leaflet-control-zoom a.leaflet-disabled { opacity: 0.38; }
-#map .leaflet-control-zoom a.leaflet-disabled:hover { background: transparent; color: var(--ink-2); }
-#map .leaflet-control-zoom a:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
-#map .leaflet-control-zoom svg {
+#stage .leaflet-control-zoom a:hover { background: var(--hover); color: var(--ink); }
+#stage .leaflet-control-zoom a.leaflet-disabled { opacity: 0.38; }
+#stage .leaflet-control-zoom a.leaflet-disabled:hover { background: transparent; color: var(--ink-2); }
+#stage .leaflet-control-zoom a:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+#stage .leaflet-control-zoom svg {
   width: 17px; height: 17px;
   fill: none; stroke: currentColor; stroke-width: 1.7;
   stroke-linecap: round; stroke-linejoin: round;
 }
-#map .leaflet-control-zoom-in { position: relative; }
+#stage .leaflet-control-zoom-in { position: relative; }
 /* A hairline between the two, as between the tool groups. */
-#map .leaflet-control-zoom-in::after {
+#stage .leaflet-control-zoom-in::after {
   content: ""; position: absolute; left: 6px; right: 6px; bottom: -2px;
   height: 1px; background: var(--line-2);
 }
@@ -495,7 +503,7 @@ html, body {
   background: var(--accent-soft);
   box-shadow: inset 0 0 0 1.5px var(--accent);
 }
-.legend-item.pinned .legend-name { font-weight: 680; color: var(--accent); }
+.legend-item.pinned .legend-name { font-weight: 680; color: var(--accent-text); }
 .legend-item:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .legend-item .swatch {
   flex: 0 0 auto;
@@ -520,19 +528,72 @@ html, body {
   .tool { padding: 8px 10px; }
   .tool-sep { margin: 3px 0; }
 }
-/* On a phone the panel stacks above the map and the search field narrows. */
+/* --------------------------------------------------------- touch devices */
+/* Set from script off (pointer: coarse), so it follows the input the device
+   actually has rather than how wide its window happens to be.
+
+   Overlay scrollbars appear only while a finger is moving, which is how a
+   panel of settings ends up looking like the whole form - there is no hint
+   that anything lies below the fold. On touch they are given a permanent
+   track instead. */
+.is-touch #panel, .is-touch .legend {
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-2) transparent;
+}
+.is-touch #panel::-webkit-scrollbar { width: 8px; }
+.is-touch .legend::-webkit-scrollbar { height: 8px; }
+.is-touch #panel::-webkit-scrollbar-track,
+.is-touch .legend::-webkit-scrollbar-track { background: transparent; }
+.is-touch #panel::-webkit-scrollbar-thumb,
+.is-touch .legend::-webkit-scrollbar-thumb {
+  background: var(--line-2); border-radius: 4px;
+  border: 2px solid transparent; background-clip: content-box;
+}
+/* Pinch zooms, so two buttons doing the same job are just map you cannot see. */
+.is-touch .leaflet-control-zoom { display: none; }
+
+/* On a phone the panel stacks above the map, and the search box and the
+   session list come out of the map and sit below it - floating them on top
+   would cover the very thing they are there to help you use. */
 @media (max-width: 860px) {
   #shell { flex-direction: column; }
   #panel {
     width: 100%; min-width: 0; border-right: 0;
-    border-bottom: 1px solid var(--line); max-height: 56%;
+    border-bottom: 1px solid var(--line);
+    max-height: 32%;
+    overflow-y: scroll;      /* not auto: keep the track, so the fold shows */
+    padding: 16px 16px 20px;
   }
-  #map { min-height: 44vh; }
+  #stage { flex: 1 1 auto; }
+  #map { min-height: 46vh; }
   #topbar { top: 10px; }
-  .search { left: 10px; bottom: 10px; padding-left: 8px; }
-  .search input { width: 140px; }
   .leaflet-top .leaflet-control { margin-top: 10px; }
   .leaflet-left .leaflet-control { margin-left: 10px; }
-  /* Its top is set from script when it would collide with the tool bar. */
-  .legend { right: 10px; width: 168px; }
+
+  .search {
+    position: static;
+    margin: 8px 10px 0;
+    max-width: none;
+    background: var(--panel-2);
+    backdrop-filter: none;
+    box-shadow: none;
+  }
+  .search input { width: auto; flex: 1 1 auto; }
+
+  /* One scrolling row of chips rather than a column, so a dozen sessions cost
+     the same sliver of screen as two. */
+  .legend {
+    position: static;
+    top: auto; right: auto; width: auto;
+    margin: 8px 10px;
+    max-height: none;
+    display: flex; gap: 4px;
+    overflow-x: auto; overflow-y: hidden;
+    background: var(--panel-2);
+    backdrop-filter: none;
+    box-shadow: none;
+  }
+  .legend-item { width: auto; flex: 0 0 auto; }
+  .legend-text { display: flex; align-items: baseline; gap: 7px; }
+  .legend-name, .legend-meta { white-space: nowrap; }
 }

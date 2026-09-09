@@ -25,9 +25,10 @@ const SESSION_COLORS = {
          '#f87171', '#60a5fa', '#e879f9', '#38bdf8', '#fda4af'],
   // Violet first: OSM Carto paints primary roads orange and trunk roads
   // salmon, so an orange route is easy to mistake for the map's own road
-  // colouring. Blue is left out entirely, since the drawn zones are blue.
-  light: ['#7c3aed', '#0d9488', '#c026d3', '#ea580c', '#65a30d',
-          '#e11d48', '#0284c7', '#ca8a04', '#059669', '#be123c'],
+  // colouring. No green here either - both themes now draw the zones in the
+  // brand green, and a route the colour of the zone outline reads as part of it.
+  light: ['#7c3aed', '#0284c7', '#c026d3', '#ea580c', '#e11d48',
+          '#4f46e5', '#ca8a04', '#be123c', '#0369a1', '#a21caf'],
 };
 
 const THEME_KEY = 'routile-theme';
@@ -77,14 +78,23 @@ const state = {
 const map = L.map('map', { zoomControl: false, boxZoom: false })
   .setView([48.148, 17.107], 14);
 
+/* Is the thing pointing at this page a finger? Asked of the input the device
+   actually has rather than of the window's width, so a narrow desktop window
+   keeps its mouse affordances and a large tablet loses them. */
+const coarsePointer = window.matchMedia('(pointer: coarse)').matches;
+document.documentElement.classList.toggle('is-touch', coarsePointer);
+
 // Leaflet's zoom buttons, with the same line icons as the tool bar and no
-// hover titles: nothing on this map pops text up under the pointer.
-const zoomGlyph = (d) =>
-  `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${d}"/></svg>`;
-L.control.zoom({
-  zoomInText: zoomGlyph('M12 5v14M5 12h14'), zoomInTitle: '',
-  zoomOutText: zoomGlyph('M5 12h14'), zoomOutTitle: '',
-}).addTo(map);
+// hover titles: nothing on this map pops text up under the pointer. A touch
+// screen pinches instead, so there they would only cover the map.
+if (!coarsePointer) {
+  const zoomGlyph = (d) =>
+    `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${d}"/></svg>`;
+  L.control.zoom({
+    zoomInText: zoomGlyph('M12 5v14M5 12h14'), zoomInTitle: '',
+    zoomOutText: zoomGlyph('M5 12h14'), zoomOutTitle: '',
+  }).addTo(map);
+}
 // The default prefix carries a title tooltip; this one is the same credit without it.
 map.attributionControl.setPrefix('<a href="https://leafletjs.com">Leaflet</a>');
 
@@ -131,6 +141,14 @@ state.arrowLayer = L.layerGroup().addTo(map);
 state.pointLayer = L.layerGroup().addTo(map);
 map.on('moveend zoomend', () => refreshDetail());
 
+// The map shares the stage with the search box and the session list, and on a
+// phone those take real height from it. Leaflet has to be told when that
+// happens or it keeps drawing for the size it had.
+new ResizeObserver(() => {
+  map.invalidateSize({ animate: false });
+  placeLegend();
+}).observe($('stage'));
+
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
   maxZoom: 19,
   // Fetched with CORS, so the same cached tiles may be drawn onto the canvas
@@ -165,9 +183,16 @@ $('theme-toggle').onclick = () =>
   applyTheme(themeName() === 'dark' ? 'light' : 'dark');
 
 /* -------------------------------------------------------------- drawing */
-// One drag gesture, three shapes. `drag.tool` is fixed at mousedown so a key
-// released mid-drag cannot change what is being drawn.
-let drag = null;   // { tool, from, points, layer, ring, closing }
+/* One drag gesture, three shapes, and one code path for a mouse, a finger and
+   a pen: pointer events cover all three. `drag.tool` is fixed at the press so
+   a key released mid-drag cannot change what is being drawn.
+
+   The pointer is captured, so a drag that leaves the map keeps reporting and
+   a release anywhere still finishes the shape. While a shape tool is armed
+   Leaflet's own dragging is off (see setMode), so on a touch screen one finger
+   draws rather than panning; two fingers still pinch, and the Pan tool hands
+   the map back. */
+let drag = null;   // { tool, pointerId, from, points, layer, ring, closing }
 
 const MIN_DRAG_PX = 12;        // below this, a drag is an accidental click
 const FREEHAND_STEP_PX = 5;    // sampling distance while drawing by hand
@@ -175,36 +200,51 @@ const FREEHAND_SIMPLIFY_PX = 3;
 const SNAP_PX = 22;            // radius of the "release here to close" ring
 const SNAP_MIN_POINTS = 6;     // don't offer to close before a loop exists
 
+const mapEl = $('map');
+
 function activeTool(ev) {
   if (SHAPES.includes(state.mode)) return state.mode;
   // Shift+drag draws without leaving pan mode, using the last shape picked.
-  if (state.mode === 'pan' && ev && ev.originalEvent && ev.originalEvent.shiftKey) {
-    return state.lastShape;
-  }
+  if (state.mode === 'pan' && ev && ev.shiftKey) return state.lastShape;
   return null;
 }
 
-map.on('mousedown', (ev) => {
-  // Left button only: the other two are the temporary pan grip below.
-  if (ev.originalEvent && ev.originalEvent.button !== 0) return;
+// A pointer event carries viewport coordinates; Leaflet wants them measured
+// from the map's own top left corner.
+function pointerLatLng(ev) {
+  const box = mapEl.getBoundingClientRect();
+  return map.containerPointToLatLng(
+    L.point(ev.clientX - box.left, ev.clientY - box.top));
+}
+
+mapEl.addEventListener('pointerdown', (ev) => {
+  // A mouse draws with the left button; the other two are the pan grip below.
+  if (ev.pointerType === 'mouse' && ev.button !== 0) return;
+  // A second finger mid-drag is a pinch, not a second zone.
+  if (drag) return;
+  if (ev.target.closest('.leaflet-control')) return;
   const tool = activeTool(ev);
   if (!tool) return;
-  if (drag) discardDraft();
 
-  map.dragging.disable();
-  drag = { tool, from: ev.latlng, points: [ev.latlng], layer: null,
-           ring: null, closing: false };
+  ev.preventDefault();
+  // Captured, so the rest of the gesture arrives here even if it wanders off
+  // the map or ends over the tool bar.
+  try { mapEl.setPointerCapture(ev.pointerId); } catch (err) { /* pointer gone */ }
+
+  const at = pointerLatLng(ev);
+  drag = { tool, pointerId: ev.pointerId, from: at, points: [at],
+           layer: null, ring: null, closing: false };
 
   if (tool === 'rect') {
-    drag.layer = L.rectangle(L.latLngBounds(ev.latlng, ev.latlng), DRAFT_STYLE());
+    drag.layer = L.rectangle(L.latLngBounds(at, at), DRAFT_STYLE());
   } else if (tool === 'circle') {
-    drag.layer = L.circle(ev.latlng, { radius: 1, ...DRAFT_STYLE() });
+    drag.layer = L.circle(at, { radius: 1, ...DRAFT_STYLE() });
   } else {
-    drag.layer = L.polyline([ev.latlng], DRAFT_STYLE());
+    drag.layer = L.polyline([at], DRAFT_STYLE());
     // A ring at the start showing where to finish. Without it the shape closes
     // with a straight line from wherever you happened to stop, which is how a
     // careful outline ends up with a spike across the map.
-    drag.ring = L.circleMarker(ev.latlng, {
+    drag.ring = L.circleMarker(at, {
       radius: SNAP_PX, color: cssVar('--accent'), weight: 1.5,
       dashArray: '4,3', fillOpacity: 0.06, interactive: false,
     }).addTo(map);
@@ -212,22 +252,32 @@ map.on('mousedown', (ev) => {
   drag.layer.addTo(map);
 });
 
-map.on('mousemove', (ev) => {
-  if (!drag) return;
+mapEl.addEventListener('pointermove', (ev) => {
+  if (!drag || ev.pointerId !== drag.pointerId) return;
+  const at = pointerLatLng(ev);
   if (drag.tool === 'rect') {
-    drag.layer.setBounds(L.latLngBounds(drag.from, ev.latlng));
+    drag.layer.setBounds(L.latLngBounds(drag.from, at));
   } else if (drag.tool === 'circle') {
-    drag.layer.setRadius(drag.from.distanceTo(ev.latlng));
+    drag.layer.setRadius(drag.from.distanceTo(at));
   } else {
-    // Sampled rather than recording every mousemove: a slow hand emits
-    // hundreds of points a second, and the outline is smoothed at the end.
+    // Sampled rather than recording every move: a slow hand emits hundreds of
+    // points a second, and the outline is smoothed at the end anyway.
     const last = drag.points[drag.points.length - 1];
-    if (pixelGap(last, ev.latlng) >= FREEHAND_STEP_PX) drag.points.push(ev.latlng);
-    setClosing(withinSnap(ev.latlng));
+    if (pixelGap(last, at) >= FREEHAND_STEP_PX) drag.points.push(at);
+    setClosing(withinSnap(at));
     drag.layer.setLatLngs(
       drag.closing ? drag.points.concat([drag.from]) : drag.points
     );
   }
+});
+
+mapEl.addEventListener('pointerup', (ev) => {
+  if (!drag || ev.pointerId !== drag.pointerId) return;
+  finishDrag(pointerLatLng(ev));
+});
+// The system took the gesture away: a phone call, a system gesture, a pinch.
+mapEl.addEventListener('pointercancel', (ev) => {
+  if (drag && ev.pointerId === drag.pointerId) finishDrag(null);
 });
 
 function withinSnap(latlng) {
@@ -249,21 +299,29 @@ function pixelGap(a, b) {
 
 function discardDraft() {
   if (!drag) return;
+  try { mapEl.releasePointerCapture(drag.pointerId); } catch (err) { /* already gone */ }
   if (drag.layer) map.removeLayer(drag.layer);
   if (drag.ring) map.removeLayer(drag.ring);
   drag = null;
-  map.dragging.enable();
+}
+
+/* A press that never grew into a drag is a click on the map: it draws nothing
+   and lets go of whatever the legend has pinned. The map's own click event
+   cannot do this job any more, since a shape tool takes the gesture over at
+   the press and the click that would have followed never arrives. */
+function tapped() {
+  if (state.pinned !== null) pin(null);
 }
 
 function finishDrag(latlng) {
   if (!drag) return;
   const { tool, from, points, closing } = drag;
   discardDraft();
-  if (!latlng) return;      // cancelled: Escape, or released off the map
+  if (!latlng) return;      // cancelled: Escape, or the gesture was taken away
 
   if (tool === 'rect') {
     const bounds = L.latLngBounds(from, latlng);
-    if (pixelGap(bounds.getNorthWest(), bounds.getSouthEast()) < MIN_DRAG_PX) return;
+    if (pixelGap(bounds.getNorthWest(), bounds.getSouthEast()) < MIN_DRAG_PX) return tapped();
     addShape({
       type: 'rect',
       west: bounds.getWest(), south: bounds.getSouth(),
@@ -271,7 +329,7 @@ function finishDrag(latlng) {
     });
   } else if (tool === 'circle') {
     // Half the rectangle's threshold: this is a radius, not a diagonal.
-    if (pixelGap(from, latlng) < MIN_DRAG_PX / 2) return;
+    if (pixelGap(from, latlng) < MIN_DRAG_PX / 2) return tapped();
     addShape({
       type: 'circle',
       lat: from.lat, lon: from.lng, radius_m: from.distanceTo(latlng),
@@ -281,7 +339,7 @@ function finishDrag(latlng) {
     // on wherever the pointer drifted to inside it.
     const raw = closing ? points : points.concat([latlng]);
     const outline = simplifyOutline(raw);
-    if (outline.length < 3) return;
+    if (outline.length < 3) return tapped();
     addShape({ type: 'freehand', points: outline.map((p) => [p.lat, p.lng]) });
   }
 }
@@ -295,15 +353,6 @@ function simplifyOutline(latlngs) {
     .map((p) => map.containerPointToLatLng(p));
 }
 
-map.on('mouseup', (ev) => finishDrag(ev.latlng));
-
-// A release outside the map never reaches Leaflet, which would leave the drag
-// stuck and panning disabled. Cancel on the document instead.
-document.addEventListener('mouseup', (ev) => {
-  if (!drag) return;
-  if (ev.target.closest && ev.target.closest('#map')) return;
-  finishDrag(null);
-});
 document.addEventListener('keydown', (ev) => {
   if (ev.key === 'Escape') finishDrag(null);
 });
@@ -328,12 +377,11 @@ map.on('click', (ev) => {
    Leaflet's own drag handler answers to the left button only - which the draw
    tools need - so the panning here is done by hand. */
 const PAN_BUTTONS = new Set([1, 2]);
-const mapEl = $('map');
 let tempPan = null;
 
 mapEl.addEventListener('mousedown', (ev) => {
   if (tempPan || !PAN_BUTTONS.has(ev.button)) return;
-  if (ev.target.closest('#topbar, #search, .legend, .leaflet-control')) return;
+  if (ev.target.closest('.leaflet-control')) return;
   ev.preventDefault();
   if (drag) finishDrag(null);     // a half-drawn zone is abandoned, not kept
   tempPan = { mode: state.mode, x: ev.clientX, y: ev.clientY };
@@ -360,7 +408,6 @@ document.addEventListener('mouseup', (ev) => {
 // The right button is a pan grip here, so its menu would fire on every release
 // - except over the search box, where a paste menu is the whole point.
 mapEl.addEventListener('contextmenu', (ev) => {
-  if (ev.target.closest('#search')) return;
   ev.preventDefault();
 });
 
@@ -517,9 +564,12 @@ function setMode(mode) {
   for (const [key, id] of Object.entries(TOOL_BUTTONS)) {
     $(id).classList.toggle('active', mode === key);
   }
-  const el = $('map');
-  el.classList.toggle('drawing', SHAPES.includes(mode));
-  el.classList.toggle('pinning', mode === 'pin');
+  const drawing = SHAPES.includes(mode);
+  mapEl.classList.toggle('drawing', drawing);
+  mapEl.classList.toggle('pinning', mode === 'pin');
+  // A shape tool owns the drag gesture, so Leaflet must not pan with it as
+  // well. This is what lets one finger draw on a touch screen.
+  if (drawing) map.dragging.disable(); else map.dragging.enable();
 }
 
 for (const [key, id] of Object.entries(TOOL_BUTTONS)) {
@@ -580,10 +630,16 @@ $('search-input').addEventListener('input', () => {
 
 /* ---------------------------------------------------------------- config */
 $('passes').max = String(config.PASSES_MAX);
+$(config.TRAVEL_MODE_DEFAULT === 'walk' ? 'travel-walk' : 'travel-drive').checked = true;
+$('private-roads').checked = config.INCLUDE_PRIVATE_DEFAULT;
 $(config.BOTH_DIRECTIONS_DEFAULT ? 'dir-both' : 'dir-oneway').checked = true;
 $('session').value = String(Math.round((config.SESSION_SECONDS_DEFAULT / 3600) * 100) / 100);
 
 function bothDirections() { return $('dir-both').checked; }
+
+function travelMode() { return $('travel-walk').checked ? 'walk' : 'drive'; }
+
+function includePrivate() { return $('private-roads').checked; }
 
 function sessionEnabled() { return $('session-enabled').checked; }
 
@@ -629,6 +685,8 @@ function validate() {
 function payload() {
   const body = {
     shape: shapePayload(),
+    travel_mode: travelMode(),
+    include_private: includePrivate(),
     both_directions: bothDirections(),
     passes: passesValue() || 1,
     session_minutes: (sessionHours() || NO_SPLIT_HOURS) * 60,
@@ -670,7 +728,8 @@ function runCheck() {
   $('area-info').textContent = areaText(area.areaKm2(), state.regions.length);
 }
 
-['passes', 'session', 'dir-oneway', 'dir-both', 'session-enabled'].forEach((id) => {
+['passes', 'session', 'dir-oneway', 'dir-both', 'session-enabled',
+ 'travel-drive', 'travel-walk', 'private-roads'].forEach((id) => {
   $(id).addEventListener('change', () => {
     if (id === 'session-enabled') syncSessionField();
     scheduleCheck();
@@ -780,7 +839,7 @@ function renderResult(res) {
   const sessions = res.sessions;
   $('summary').innerHTML = [
     ['Distance', `${st.total_km} km`],
-    ['Driving', st.duration],
+    [(res.request || {}).travel_mode === 'walk' ? 'Walking' : 'Driving', st.duration],
     ['Sessions', sessions.length],
     ['Roads covered', `${cov.centerline_km_covered} km`],
     ['Coverage', `${cov.coverage_pct}%`],
@@ -1042,17 +1101,18 @@ function placeLegend() {
   if (legend.classList.contains('hidden')) return;
   legend.style.top = '';
   legend.style.maxHeight = '';
+  // Below the map on a phone, where there is nothing to dodge.
+  if (getComputedStyle(legend).position !== 'absolute') return;
   const bar = $('toolbar').getBoundingClientRect();
   const box = legend.getBoundingClientRect();
   const clear = 8;
   if (box.left < bar.right + clear && box.right > bar.left - clear
       && box.top < bar.bottom + clear) {
-    const top = bar.bottom - $('map').getBoundingClientRect().top + 10;
+    const top = bar.bottom - $('stage').getBoundingClientRect().top + 10;
     legend.style.top = `${top}px`;
     legend.style.maxHeight = `calc(100% - ${top + 14}px)`;
   }
 }
-new ResizeObserver(() => placeLegend()).observe($('map'));
 
 /* Two layers of the same highlight, both driven from the legend alone.
    Hovering a row previews that session; clicking it pins it so it survives the

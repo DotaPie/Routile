@@ -29,13 +29,44 @@ import { Graph, stronglyConnectedComponents, weakComponents } from './graph.js';
 export class FetchError extends Error {}
 export class NoRoadsError extends Error {}
 
-// OSMnx's "drive" filter: public streets a car may use, service roads and
-// private ways excluded.
-const DRIVE_FILTER = '["highway"]["area"!~"yes"]["access"!~"private"]'
-  + '["highway"!~"abandoned|bridleway|bus_guideway|busway|construction|corridor|cycleway|elevator|'
-  + 'escalator|footway|path|pedestrian|planned|platform|proposed|raceway|razed|service|steps|track"]'
-  + '["motor_vehicle"!~"no"]["motorcar"!~"no"]'
-  + '["service"!~"alley|driveway|emergency_access|parking|parking_aisle|private"]';
+/* Which ways to ask OpenStreetMap for, after OSMnx's own filters.
+
+   "drive" is the public streets a car may use. "walk" is what a person may
+   walk along, which adds the footways, paths, steps and pedestrian streets a
+   car filter throws out, and drops the motorways it keeps.
+
+   `includePrivate` relaxes the access rules on either profile. Left off, the
+   query skips ways tagged access=private and, when driving, the service roads
+   that are nearly always the same thing: driveways, alleys, parking aisles and
+   yards. Turned on, all of those come back, which is what you want for an
+   industrial estate or a gated development and not what you want for a sweep
+   of the public streets. */
+const HIGHWAY_NOT_DRIVEN =
+  'abandoned|bridleway|bus_guideway|busway|construction|corridor|cycleway|elevator|'
+  + 'escalator|footway|path|pedestrian|planned|platform|proposed|raceway|razed|steps|track';
+// "motor" catches motorway and motorway_link: a pavement beside one is walkable,
+// the carriageway is not.
+const HIGHWAY_NOT_WALKED =
+  'abandoned|bus_guideway|construction|cycleway|motor|planned|platform|proposed|raceway|razed';
+const SERVICE_PRIVATE = 'alley|driveway|emergency_access|parking|parking_aisle|private';
+
+export function roadFilter({ mode = 'drive', includePrivate = false } = {}) {
+  const parts = ['["highway"]', '["area"!~"yes"]'];
+  if (!includePrivate) parts.push('["access"!~"private"]');
+  if (mode === 'walk') {
+    parts.push(`["highway"!~"${HIGHWAY_NOT_WALKED}"]`, '["foot"!~"no"]');
+    if (!includePrivate) parts.push('["service"!~"private"]');
+  } else {
+    parts.push(`["highway"!~"${includePrivate ? HIGHWAY_NOT_DRIVEN : HIGHWAY_NOT_DRIVEN + '|service'}"]`);
+    parts.push('["motor_vehicle"!~"no"]', '["motorcar"!~"no"]');
+    if (!includePrivate) parts.push(`["service"!~"${SERVICE_PRIVATE}"]`);
+  }
+  return parts.join('');
+}
+
+/* Two profiles asking for different roads must not share one cached download. */
+export const profileKey = ({ mode = 'drive', includePrivate = false } = {}) =>
+  `${mode}${includePrivate ? '+private' : ''}`;
 
 const ONEWAY_VALUES = new Set(['yes', 'true', '1', '-1', 'reverse', 'T', 'F']);
 const REVERSED_VALUES = new Set(['-1', 'reverse', 'T']);
@@ -43,9 +74,9 @@ const REVERSED_VALUES = new Set(['-1', 'reverse', 'T']);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /* ----------------------------------------------------------------- fetching */
-export function overpassQuery(box) {
+export function overpassQuery(box, profile) {
   const bbox = `${box.bottom},${box.left},${box.top},${box.right}`;
-  return `[out:json][timeout:${config.OVERPASS_QUERY_TIMEOUT_S}];(way${DRIVE_FILTER}(${bbox});>;);out;`;
+  return `[out:json][timeout:${config.OVERPASS_QUERY_TIMEOUT_S}];(way${roadFilter(profile)}(${bbox});>;);out;`;
 }
 
 async function postQuery(endpoint, query) {
@@ -70,12 +101,12 @@ async function postQuery(endpoint, query) {
    A failure here is by far the most likely way for the whole pipeline to
    fail - Overpass is a free shared service that regularly refuses connections -
    so it gets a message a user can act on. */
-export async function fetchOverpass(box, { cache = null, progress = null } = {}) {
-  const key = box.key();
+export async function fetchOverpass(box, { profile, cache = null, progress = null } = {}) {
+  const key = `${box.key()}|${profileKey(profile)}`;
   const hit = cache ? await cache.get('overpass', key) : null;
   if (hit) return hit;
 
-  const query = overpassQuery(box);
+  const query = overpassQuery(box, profile);
   let last = null;
   for (let attempt = 0; attempt < config.OVERPASS_RETRIES; attempt++) {
     const endpoint = config.OVERPASS_ENDPOINTS[attempt % config.OVERPASS_ENDPOINTS.length];
@@ -167,7 +198,7 @@ function push(map, key, value) {
   if (list) list.push(value); else map.set(key, [value]);
 }
 
-function fromElements(elements) {
+function fromElements(elements, { ignoreOneway = false } = {}) {
   const coords = new Map();
   const ways = [];
   for (const el of elements) {
@@ -180,7 +211,10 @@ function fromElements(elements) {
     const tags = way.tags || {};
     let ids = way.nodes.filter((id) => coords.has(id));
     if (ids.length < 2) continue;
-    const oneway = ONEWAY_VALUES.has(tags.oneway) || tags.junction === 'roundabout' || tags.junction === 'circular';
+    // On foot a one-way street is a one-way street for traffic only, so the
+    // walking graph takes every way in both directions.
+    const oneway = !ignoreOneway
+      && (ONEWAY_VALUES.has(tags.oneway) || tags.junction === 'roundabout' || tags.junction === 'circular');
     if (oneway && REVERSED_VALUES.has(tags.oneway)) ids = ids.slice().reverse();
     for (const id of ids) if (!raw.nodes.has(id)) raw.nodes.set(id, coords.get(id));
 
@@ -330,7 +364,13 @@ function parseMaxspeed(text) {
   return values.length ? values.reduce((s, v) => s + v, 0) / values.length : null;
 }
 
-function assignTravelTimes(edges) {
+function assignTravelTimes(edges, fixedKph = null) {
+  // Walking: one pace for the whole network, since a speed limit says nothing
+  // about how fast anyone walks down the street it governs.
+  if (fixedKph) {
+    for (const e of edges) e.travel = Math.round(e.length / (fixedKph / 3.6) * 10) / 10;
+    return;
+  }
   const parsed = edges.map((e) => parseMaxspeed(e.maxspeed));
   const byType = new Map();
   edges.forEach((e, i) => {
@@ -351,8 +391,9 @@ function assignTravelTimes(edges) {
 }
 
 /* ------------------------------------------------------------- assembly */
-export function buildGraph(elements, fetchBox, downloadBox) {
-  const raw = fromElements(elements);
+export function buildGraph(elements, fetchBox, downloadBox, { mode = 'drive' } = {}) {
+  const walking = mode === 'walk';
+  const raw = fromElements(elements, { ignoreOneway: walking });
   truncateToBox(raw, downloadBox);
   simplify(raw);
   truncateToBox(raw, fetchBox);
@@ -365,7 +406,7 @@ export function buildGraph(elements, fetchBox, downloadBox) {
     }
     e.length = geomLengthM(e.geom);
   }
-  assignTravelTimes(raw.edges);
+  assignTravelTimes(raw.edges, walking ? config.WALK_KMH : null);
 
   const ids = [...raw.nodes.keys()];
   const index = new Map(ids.map((id, i) => [id, i]));
@@ -473,15 +514,17 @@ const round = (v, d) => Math.round(v * 10 ** d) / 10 ** d;
 
 /* Fetch, mark required arcs and prune to the largest strongly connected
    component. Returns { graph, required, report }. */
-export async function prepare(area, { bufferM, snapDeg, minInsideM, progress = null, cache = null }) {
+export async function prepare(area, { bufferM, snapDeg, minInsideM, mode = 'drive',
+                                      includePrivate = false, progress = null, cache = null }) {
   const say = progress || (() => {});
 
   // Download the enclosing box; require only the roads inside the shape.
   const fetchBox = area.bounds.bufferM(bufferM).snapOut(snapDeg);
   const downloadBox = fetchBox.bufferM(config.DOWNLOAD_MARGIN_M);
   say('fetch', `downloading roads for ${fetchBox.areaKm2().toFixed(1)} km2`);
-  const elements = await fetchOverpass(downloadBox, { cache, progress: say });
-  const G = buildGraph(elements, fetchBox, downloadBox);
+  const profile = { mode, includePrivate };
+  const elements = await fetchOverpass(downloadBox, { profile, cache, progress: say });
+  const G = buildGraph(elements, fetchBox, downloadBox, { mode });
   console.info(`fetched ${G.N} nodes / ${G.E} arcs`);
 
   const report = {
