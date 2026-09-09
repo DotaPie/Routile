@@ -10,34 +10,19 @@ const $ = (id) => document.getElementById(id);
 // The three ways to draw. Each one is a full drag gesture: press, move, release.
 const SHAPES = ['rect', 'circle', 'freehand'];
 
-/* One route palette per theme, because a route drawn for a paper-white OSM tile
-   disappears on a dark one and the other way round. Each palette leaves out its
-   own theme's accent hue: the drawn zones wear that, and a session line the
-   same colour as the zone outline reads as part of it.
+/* The route palette, drawn for the dark basemap. Bright, and no green: green
+   is the accent the drawn zones wear, and a session line the same colour as
+   the zone outline reads as part of it.
 
-   The dark basemap is the same OSM tile inverted in CSS - see the filter on
-   .leaflet-tile-pane. Every keyless dark tile service worth using has since
+   The dark basemap is the standard OSM tile inverted in CSS - see the filter
+   on .leaflet-tile-pane. Every keyless dark tile service worth using has since
    grown an API key, and one basemap that needs no account is worth more here
-   than a perfectly hand-styled one that does. */
-const SESSION_COLORS = {
-  // Bright, and no green: green is the dark theme's accent.
-  dark: ['#a78bfa', '#22d3ee', '#f472b6', '#fb923c', '#facc15',
-         '#f87171', '#60a5fa', '#e879f9', '#38bdf8', '#fda4af'],
-  // Violet first: OSM Carto paints primary roads orange and trunk roads
-  // salmon, so an orange route is easy to mistake for the map's own road
-  // colouring. No green here either - both themes now draw the zones in the
-  // brand green, and a route the colour of the zone outline reads as part of it.
-  light: ['#7c3aed', '#0284c7', '#c026d3', '#ea580c', '#e11d48',
-          '#4f46e5', '#ca8a04', '#be123c', '#0369a1', '#a21caf'],
-};
+   than a perfectly hand-styled one that does. The exported picture is the
+   other way up, on the paper tile, and carries its own palette in snapshot.js. */
+const SESSION_COLORS = ['#a78bfa', '#22d3ee', '#f472b6', '#fb923c', '#facc15',
+                        '#f87171', '#60a5fa', '#e879f9', '#38bdf8', '#fda4af'];
 
-const THEME_KEY = 'routile-theme';
-const themeName = () =>
-  (document.documentElement.dataset.theme === 'light' ? 'light' : 'dark');
-const sessionColor = (i) => {
-  const palette = SESSION_COLORS[themeName()];
-  return palette[i % palette.length];
-};
+const sessionColor = (i) => SESSION_COLORS[i % SESSION_COLORS.length];
 
 const ROUTE_WEIGHT = 3;
 
@@ -156,31 +141,6 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
   crossOrigin: 'anonymous',
   attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
 }).addTo(map);
-
-/* ---------------------------------------------------------------- theme */
-function applyTheme(name) {
-  document.documentElement.dataset.theme = name;
-  try { localStorage.setItem(THEME_KEY, name); } catch (err) { /* private mode */ }
-
-  // Everything already on the map that carries a theme colour. The start pin
-  // and the drawn zones take theirs from CSS variables, so the pin needs
-  // nothing; the zones are Leaflet paths and do.
-  for (const layer of state.regionLayers) layer.setStyle(AREA_STYLE());
-  state.routeLayers.forEach((line, i) => {
-    if (line) line.setStyle({ color: sessionColor(i) });
-  });
-  if (state.result) {
-    // Rebuilt for the new swatch colours, so the pinned row has to be put back.
-    const pinned = state.pinned;
-    buildLegend(state.result.sessions);
-    pin(pinned);
-  }
-  refreshDetail();
-}
-
-applyTheme(themeName());
-$('theme-toggle').onclick = () =>
-  applyTheme(themeName() === 'dark' ? 'light' : 'dark');
 
 /* -------------------------------------------------------------- drawing */
 /* One drag gesture, three shapes, and one code path for a mouse, a finger and
@@ -630,14 +590,11 @@ $('search-input').addEventListener('input', () => {
 
 /* ---------------------------------------------------------------- config */
 $('passes').max = String(config.PASSES_MAX);
-$(config.TRAVEL_MODE_DEFAULT === 'walk' ? 'travel-walk' : 'travel-drive').checked = true;
 $('private-roads').checked = config.INCLUDE_PRIVATE_DEFAULT;
 $(config.BOTH_DIRECTIONS_DEFAULT ? 'dir-both' : 'dir-oneway').checked = true;
 $('session').value = String(Math.round((config.SESSION_SECONDS_DEFAULT / 3600) * 100) / 100);
 
 function bothDirections() { return $('dir-both').checked; }
-
-function travelMode() { return $('travel-walk').checked ? 'walk' : 'drive'; }
 
 function includePrivate() { return $('private-roads').checked; }
 
@@ -685,7 +642,6 @@ function validate() {
 function payload() {
   const body = {
     shape: shapePayload(),
-    travel_mode: travelMode(),
     include_private: includePrivate(),
     both_directions: bothDirections(),
     passes: passesValue() || 1,
@@ -729,7 +685,7 @@ function runCheck() {
 }
 
 ['passes', 'session', 'dir-oneway', 'dir-both', 'session-enabled',
- 'travel-drive', 'travel-walk', 'private-roads'].forEach((id) => {
+ 'private-roads'].forEach((id) => {
   $(id).addEventListener('change', () => {
     if (id === 'session-enabled') syncSessionField();
     scheduleCheck();
@@ -839,7 +795,7 @@ function renderResult(res) {
   const sessions = res.sessions;
   $('summary').innerHTML = [
     ['Distance', `${st.total_km} km`],
-    [(res.request || {}).travel_mode === 'walk' ? 'Walking' : 'Driving', st.duration],
+    ['Driving', st.duration],
     ['Sessions', sessions.length],
     ['Roads covered', `${cov.centerline_km_covered} km`],
     ['Coverage', `${cov.coverage_pct}%`],
@@ -898,7 +854,6 @@ function snapshotImage() {
     sessions,
     regions: state.regions,
     start: state.startLatLng ? [state.startLatLng.lat, state.startLatLng.lng] : null,
-    palette: SESSION_COLORS.light,    // the picture is always the paper map
     title: `${st.total_km} km · ${st.duration}`,
   });
 }

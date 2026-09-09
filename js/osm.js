@@ -29,44 +29,31 @@ import { Graph, stronglyConnectedComponents, weakComponents } from './graph.js';
 export class FetchError extends Error {}
 export class NoRoadsError extends Error {}
 
-/* Which ways to ask OpenStreetMap for, after OSMnx's own filters.
+/* Which ways to ask OpenStreetMap for: OSMnx's "drive" filter, the public
+   streets a car may use.
 
-   "drive" is the public streets a car may use. "walk" is what a person may
-   walk along, which adds the footways, paths, steps and pedestrian streets a
-   car filter throws out, and drops the motorways it keeps.
-
-   `includePrivate` relaxes the access rules on either profile. Left off, the
-   query skips ways tagged access=private and, when driving, the service roads
-   that are nearly always the same thing: driveways, alleys, parking aisles and
-   yards. Turned on, all of those come back, which is what you want for an
-   industrial estate or a gated development and not what you want for a sweep
-   of the public streets. */
+   `includePrivate` relaxes the access rules. Left off, the query skips ways
+   tagged access=private and the service roads that are nearly always the same
+   thing: driveways, alleys, parking aisles and yards. Turned on, all of those
+   come back, which is what you want for an industrial estate or a gated
+   development and not what you want for a sweep of the public streets. */
 const HIGHWAY_NOT_DRIVEN =
   'abandoned|bridleway|bus_guideway|busway|construction|corridor|cycleway|elevator|'
   + 'escalator|footway|path|pedestrian|planned|platform|proposed|raceway|razed|steps|track';
-// "motor" catches motorway and motorway_link: a pavement beside one is walkable,
-// the carriageway is not.
-const HIGHWAY_NOT_WALKED =
-  'abandoned|bus_guideway|construction|cycleway|motor|planned|platform|proposed|raceway|razed';
 const SERVICE_PRIVATE = 'alley|driveway|emergency_access|parking|parking_aisle|private';
 
-export function roadFilter({ mode = 'drive', includePrivate = false } = {}) {
+export function roadFilter({ includePrivate = false } = {}) {
   const parts = ['["highway"]', '["area"!~"yes"]'];
   if (!includePrivate) parts.push('["access"!~"private"]');
-  if (mode === 'walk') {
-    parts.push(`["highway"!~"${HIGHWAY_NOT_WALKED}"]`, '["foot"!~"no"]');
-    if (!includePrivate) parts.push('["service"!~"private"]');
-  } else {
-    parts.push(`["highway"!~"${includePrivate ? HIGHWAY_NOT_DRIVEN : HIGHWAY_NOT_DRIVEN + '|service'}"]`);
-    parts.push('["motor_vehicle"!~"no"]', '["motorcar"!~"no"]');
-    if (!includePrivate) parts.push(`["service"!~"${SERVICE_PRIVATE}"]`);
-  }
+  parts.push(`["highway"!~"${includePrivate ? HIGHWAY_NOT_DRIVEN : HIGHWAY_NOT_DRIVEN + '|service'}"]`);
+  parts.push('["motor_vehicle"!~"no"]', '["motorcar"!~"no"]');
+  if (!includePrivate) parts.push(`["service"!~"${SERVICE_PRIVATE}"]`);
   return parts.join('');
 }
 
-/* Two profiles asking for different roads must not share one cached download. */
-export const profileKey = ({ mode = 'drive', includePrivate = false } = {}) =>
-  `${mode}${includePrivate ? '+private' : ''}`;
+/* Two queries asking for different roads must not share one cached download. */
+export const profileKey = ({ includePrivate = false } = {}) =>
+  (includePrivate ? 'drive+private' : 'drive');
 
 const ONEWAY_VALUES = new Set(['yes', 'true', '1', '-1', 'reverse', 'T', 'F']);
 const REVERSED_VALUES = new Set(['-1', 'reverse', 'T']);
@@ -198,7 +185,7 @@ function push(map, key, value) {
   if (list) list.push(value); else map.set(key, [value]);
 }
 
-function fromElements(elements, { ignoreOneway = false } = {}) {
+function fromElements(elements) {
   const coords = new Map();
   const ways = [];
   for (const el of elements) {
@@ -211,10 +198,7 @@ function fromElements(elements, { ignoreOneway = false } = {}) {
     const tags = way.tags || {};
     let ids = way.nodes.filter((id) => coords.has(id));
     if (ids.length < 2) continue;
-    // On foot a one-way street is a one-way street for traffic only, so the
-    // walking graph takes every way in both directions.
-    const oneway = !ignoreOneway
-      && (ONEWAY_VALUES.has(tags.oneway) || tags.junction === 'roundabout' || tags.junction === 'circular');
+    const oneway = ONEWAY_VALUES.has(tags.oneway) || tags.junction === 'roundabout' || tags.junction === 'circular';
     if (oneway && REVERSED_VALUES.has(tags.oneway)) ids = ids.slice().reverse();
     for (const id of ids) if (!raw.nodes.has(id)) raw.nodes.set(id, coords.get(id));
 
@@ -364,13 +348,7 @@ function parseMaxspeed(text) {
   return values.length ? values.reduce((s, v) => s + v, 0) / values.length : null;
 }
 
-function assignTravelTimes(edges, fixedKph = null) {
-  // Walking: one pace for the whole network, since a speed limit says nothing
-  // about how fast anyone walks down the street it governs.
-  if (fixedKph) {
-    for (const e of edges) e.travel = Math.round(e.length / (fixedKph / 3.6) * 10) / 10;
-    return;
-  }
+function assignTravelTimes(edges) {
   const parsed = edges.map((e) => parseMaxspeed(e.maxspeed));
   const byType = new Map();
   edges.forEach((e, i) => {
@@ -391,9 +369,8 @@ function assignTravelTimes(edges, fixedKph = null) {
 }
 
 /* ------------------------------------------------------------- assembly */
-export function buildGraph(elements, fetchBox, downloadBox, { mode = 'drive' } = {}) {
-  const walking = mode === 'walk';
-  const raw = fromElements(elements, { ignoreOneway: walking });
+export function buildGraph(elements, fetchBox, downloadBox) {
+  const raw = fromElements(elements);
   truncateToBox(raw, downloadBox);
   simplify(raw);
   truncateToBox(raw, fetchBox);
@@ -406,7 +383,7 @@ export function buildGraph(elements, fetchBox, downloadBox, { mode = 'drive' } =
     }
     e.length = geomLengthM(e.geom);
   }
-  assignTravelTimes(raw.edges, walking ? config.WALK_KMH : null);
+  assignTravelTimes(raw.edges);
 
   const ids = [...raw.nodes.keys()];
   const index = new Map(ids.map((id, i) => [id, i]));
@@ -514,7 +491,7 @@ const round = (v, d) => Math.round(v * 10 ** d) / 10 ** d;
 
 /* Fetch, mark required arcs and prune to the largest strongly connected
    component. Returns { graph, required, report }. */
-export async function prepare(area, { bufferM, snapDeg, minInsideM, mode = 'drive',
+export async function prepare(area, { bufferM, snapDeg, minInsideM,
                                       includePrivate = false, progress = null, cache = null }) {
   const say = progress || (() => {});
 
@@ -522,9 +499,9 @@ export async function prepare(area, { bufferM, snapDeg, minInsideM, mode = 'driv
   const fetchBox = area.bounds.bufferM(bufferM).snapOut(snapDeg);
   const downloadBox = fetchBox.bufferM(config.DOWNLOAD_MARGIN_M);
   say('fetch', `downloading roads for ${fetchBox.areaKm2().toFixed(1)} km2`);
-  const profile = { mode, includePrivate };
+  const profile = { includePrivate };
   const elements = await fetchOverpass(downloadBox, { profile, cache, progress: say });
-  const G = buildGraph(elements, fetchBox, downloadBox, { mode });
+  const G = buildGraph(elements, fetchBox, downloadBox);
   console.info(`fetched ${G.N} nodes / ${G.E} arcs`);
 
   const report = {

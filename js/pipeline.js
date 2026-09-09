@@ -61,11 +61,9 @@ export function parseRequest(payload) {
   if (!(sessionMinutes >= 1 && sessionMinutes <= config.MAX_SESSION_MINUTES)) {
     throw new RequestError(`session length must be between 1 and ${config.MAX_SESSION_MINUTES} minutes`);
   }
-  const travelMode = payload.travel_mode === 'walk' ? 'walk' : 'drive';
   const start = payload.start || null;
   return {
     area,
-    mode: travelMode,
     includePrivate: Boolean(payload.include_private ?? config.INCLUDE_PRIVATE_DEFAULT),
     startLon: start && start.lon != null ? Number(start.lon) : null,
     startLat: start && start.lat != null ? Number(start.lat) : null,
@@ -89,7 +87,7 @@ export function requestKey(req) {
     req.area.bounds.bufferM(fetchBufferM(req)).snapOut(config.BBOX_SNAP_DEG).key(),
     req.area.key(),
     round6(req.startLon ?? 0), round6(req.startLat ?? 0),
-    req.mode, req.includePrivate,
+    req.includePrivate,
     req.bothDirections, req.passes, req.sessionSeconds,
     req.margin, req.maxLegMetres, req.maxLegArcs,
   ]);
@@ -119,7 +117,6 @@ export async function compute(req, { progress = null, cache = null } = {}) {
     bufferM: fetchBufferM(req),
     snapDeg: config.BBOX_SNAP_DEG,
     minInsideM: config.REQUIRED_MIN_INSIDE_M,
-    mode: req.mode,
     includePrivate: req.includePrivate,
     progress: say,
     cache,
@@ -173,7 +170,6 @@ export async function compute(req, { progress = null, cache = null } = {}) {
     request: {
       area: req.area.toJSON(),
       start: req.startLon !== null ? { lon: req.startLon, lat: req.startLat } : null,
-      travel_mode: req.mode,
       include_private: req.includePrivate,
       both_directions: req.bothDirections,
       passes: req.passes,

@@ -1,7 +1,8 @@
-/* Two themes, one set of tokens. Dark is the default and light is the opt-in,
-   so every colour below is a variable - nothing downstream hardcodes a shade. */
-:root,
-:root[data-theme="dark"] {
+/* One theme: dark. Every colour is still a variable, so nothing downstream
+   hardcodes a shade and a second theme would be a matter of redefining these.
+   The light theme was dropped because the brand green, which reads well on
+   ink, washes out on white. */
+:root {
   color-scheme: dark;
   --bg: #0f1316;
   --panel: #171c21;
@@ -17,7 +18,6 @@
   --accent-2: #46e0aa;
   --accent-soft: #14312a;
   --accent-line: #1e4a3d;
-  --accent-text: #35d29a;   /* the accent where it has to read as text */
   --on-accent: #06120e;
   --focus: rgba(53, 210, 154, 0.26);
   --good: #35d29a;
@@ -31,36 +31,6 @@
   --r-sm: 7px;
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.35), 0 4px 12px rgba(0, 0, 0, 0.30);
   --shadow-lg: 0 2px 6px rgba(0, 0, 0, 0.42), 0 12px 28px rgba(0, 0, 0, 0.38);
-}
-
-:root[data-theme="light"] {
-  color-scheme: light;
-  --bg: #f4f6f8;
-  --panel: #ffffff;
-  --panel-2: #f7f9fb;
-  --ink: #10151c;
-  --ink-2: #48525f;
-  --ink-3: #7b8694;
-  --line: #e6eaef;
-  --line-2: #d6dce4;
-  --hover: #eef1f5;
-  --field-bg: #ffffff;
-  --accent: #35d29a;
-  --accent-2: #27bf8a;
-  --accent-soft: #e9faf3;
-  --accent-line: #bfeddb;
-  --accent-text: #0a7d5d;
-  --on-accent: #06120e;
-  --focus: rgba(53, 210, 154, 0.30);
-  --good: #0f9960;
-  --bad: #d33d33;
-  --bad-soft: #fdefee;
-  --bad-line: #f6cdc9;
-  --map-bg: #e7ebef;
-  --glass: rgba(255, 255, 255, 0.94);
-  --pin-ring: #ffffff;
-  --shadow: 0 1px 2px rgba(16, 21, 28, 0.05), 0 4px 12px rgba(16, 21, 28, 0.06);
-  --shadow-lg: 0 2px 6px rgba(16, 21, 28, 0.10), 0 12px 28px rgba(16, 21, 28, 0.12);
 }
 
 * { box-sizing: border-box; }
@@ -96,10 +66,7 @@ html, body {
 #map { flex: 1; min-height: 0; }
 
 /* ------------------------------------------------------------------ brand */
-#panel > header {
-  display: flex; align-items: center; justify-content: space-between; gap: 10px;
-  margin-bottom: 18px;
-}
+#panel > header { margin-bottom: 18px; }
 .brand { display: flex; align-items: center; min-width: 0; }
 .brand h1 {
   margin: 0;
@@ -118,25 +85,6 @@ html, body {
   stroke-linecap: round; stroke-linejoin: round;
 }
 .logo-dot { fill: currentColor; stroke: none; }
-
-.icon-btn {
-  flex: 0 0 auto;
-  display: grid; place-items: center;
-  width: 32px; height: 32px; padding: 0;
-  color: var(--ink-2); background: transparent;
-  border: 1px solid var(--line-2); border-radius: 9px;
-  cursor: pointer;
-  transition: background 0.12s ease, color 0.12s ease;
-}
-.icon-btn:hover { background: var(--hover); color: var(--ink); }
-.icon-btn svg {
-  width: 16px; height: 16px;
-  fill: none; stroke: currentColor; stroke-width: 1.8;
-  stroke-linecap: round; stroke-linejoin: round;
-}
-/* Show the theme you would switch to, not the one you are in. */
-:root[data-theme="dark"] .icon-moon,
-:root[data-theme="light"] .icon-sun { display: none; }
 
 /* --------------------------------------------------------- floating cards */
 #topbar {
@@ -381,7 +329,7 @@ html, body {
    to ink - so there is one tile source, no account and no API key.
    Only the tile pane is touched: the routes, zones, pins and controls live in
    their own panes and must keep the colours they were given. */
-:root[data-theme="dark"] .leaflet-tile-pane {
+.leaflet-tile-pane {
   filter: invert(1) hue-rotate(180deg) brightness(0.94) contrast(0.92) saturate(0.85);
 }
 
@@ -397,10 +345,6 @@ html, body {
 #map.pinning,
 #map.pinning .leaflet-interactive {
   cursor: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='34'%20height='34'%20viewBox='0%200%2024%2024'%3E%3Cpath%20d='M12%2021s6.5-6.2%206.5-11a6.5%206.5%200%201%200-13%200C5.5%2014.8%2012%2021%2012%2021z'%20fill='%2335d29a'%20stroke='%230b1a15'%20stroke-width='1.5'/%3E%3Ccircle%20cx='12'%20cy='10'%20r='2.6'%20fill='%230b1a15'/%3E%3C/svg%3E") 17 30, crosshair;
-}
-:root[data-theme="light"] #map.pinning,
-:root[data-theme="light"] #map.pinning .leaflet-interactive {
-  cursor: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='34'%20height='34'%20viewBox='0%200%2024%2024'%3E%3Cpath%20d='M12%2021s6.5-6.2%206.5-11a6.5%206.5%200%201%200-13%200C5.5%2014.8%2012%2021%2012%2021z'%20fill='%2335d29a'%20stroke='%23ffffff'%20stroke-width='1.5'/%3E%3Ccircle%20cx='12'%20cy='10'%20r='2.6'%20fill='%23ffffff'/%3E%3C/svg%3E") 17 30, crosshair;
 }
 /* Held middle or right mouse button: a temporary grab, whatever tool is armed. */
 #map.grabbing,
@@ -447,10 +391,8 @@ html, body {
   content: ""; position: absolute; left: 6px; right: 6px; bottom: -2px;
   height: 1px; background: var(--line-2);
 }
-:root[data-theme="dark"] .leaflet-control-attribution {
-  background: var(--panel); color: var(--ink-2);
-}
-:root[data-theme="dark"] .leaflet-control-attribution a { color: var(--accent); }
+.leaflet-control-attribution { background: var(--panel); color: var(--ink-2); }
+.leaflet-control-attribution a { color: var(--accent); }
 
 /* -------------------------------------------------------- route arrows */
 /* Leaflet owns the marker element's transform for positioning, so the rotation
@@ -503,7 +445,7 @@ html, body {
   background: var(--accent-soft);
   box-shadow: inset 0 0 0 1.5px var(--accent);
 }
-.legend-item.pinned .legend-name { font-weight: 680; color: var(--accent-text); }
+.legend-item.pinned .legend-name { font-weight: 680; color: var(--accent); }
 .legend-item:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .legend-item .swatch {
   flex: 0 0 auto;

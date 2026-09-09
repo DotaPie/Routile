@@ -7,14 +7,6 @@
   <meta name="description" content="Draw an area on a map and get a route that drives every road inside it.">
   <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2024%2024'%3E%3Crect%20width='24'%20height='24'%20rx='6'%20fill='%2335d29a'/%3E%3Cpath%20d='M5.5%2020V3H12a4.5%204.5%200%200%201%200%209H9.5L17%2020'%20fill='none'%20stroke='%230b1a15'%20stroke-width='2.4'%20stroke-linecap='round'%20stroke-linejoin='round'/%3E%3Ccircle%20cx='17'%20cy='20'%20r='3.2'%20fill='%230b1a15'/%3E%3C/svg%3E">
 
-  <!-- Theme is stamped before first paint, so a dark session never flashes white. -->
-  <script>
-    try {
-      document.documentElement.dataset.theme =
-        localStorage.getItem('routile-theme') === 'light' ? 'light' : 'dark';
-    } catch (e) { document.documentElement.dataset.theme = 'dark'; }
-  </script>
-
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&display=swap">
@@ -36,16 +28,6 @@
           <circle class="logo-dot" cx="17" cy="20" r="3"/>
         </svg>outile</h1>
       </span>
-      <button id="theme-toggle" class="icon-btn" type="button"
-              aria-label="Switch between dark and light">
-        <svg class="icon-sun" viewBox="0 0 24 24" aria-hidden="true">
-          <circle cx="12" cy="12" r="4.2"/>
-          <path d="M12 2.6v2.2M12 19.2v2.2M2.6 12h2.2M19.2 12h2.2M5.4 5.4l1.6 1.6M17 17l1.6 1.6M18.6 5.4 17 7M7 17l-1.6 1.6"/>
-        </svg>
-        <svg class="icon-moon" viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M20 14.2A8.2 8.2 0 0 1 9.8 4a8.4 8.4 0 1 0 10.2 10.2z"/>
-        </svg>
-      </button>
     </header>
 
     <div class="tiles">
@@ -61,26 +43,6 @@
 
     <section class="block">
       <div class="field">
-        <span>Travel</span>
-        <div class="segmented" role="radiogroup" aria-label="Travel mode">
-          <label>
-            <input type="radio" name="travel" id="travel-drive" value="drive" checked>
-            <span>Driving</span>
-          </label>
-          <label>
-            <input type="radio" name="travel" id="travel-walk" value="walk">
-            <span>Walking</span>
-          </label>
-        </div>
-      </div>
-
-      <label class="switch">
-        <input type="checkbox" id="private-roads">
-        <span class="track" aria-hidden="true"></span>
-        <span class="switch-label">Include private roads</span>
-      </label>
-
-      <div class="field">
         <span>Direction</span>
         <div class="segmented" role="radiogroup" aria-label="Direction">
           <label>
@@ -93,6 +55,12 @@
           </label>
         </div>
       </div>
+
+      <label class="switch">
+        <input type="checkbox" id="private-roads">
+        <span class="track" aria-hidden="true"></span>
+        <span class="switch-label">Include private roads</span>
+      </label>
 
       <label class="field">
         <span>Passes per street</span>

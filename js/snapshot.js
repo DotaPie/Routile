@@ -5,10 +5,12 @@
    a legend and the attribution. It is framed on the route rather than on
    whatever the screen happens to show, at the largest zoom that fits.
 
-   Always the paper-white tile with the light palette, whichever theme the page
-   is in: a file in a zip is a document, read later and maybe printed, and one
-   look for it beats two. The dark map is a CSS filter on the page, and the
-   canvas equivalent is not available in every browser anyway. */
+   The page itself is dark, but this is the paper-white tile: a file in a zip
+   is a document, opened later in a file browser and quite possibly printed,
+   where ink on white is what works. The page's dark map is a CSS filter, and
+   the canvas equivalent is not available in every browser anyway. So the
+   picture carries its own palette and its own deeper green, chosen to read on
+   pale paper rather than on the screen's ink. */
 
 const TILE = 256;
 const tileUrl = (z, x, y) =>
@@ -25,9 +27,10 @@ const MAX_ZOOM = 18;
 const MIN_ZOOM = 4;
 const TILE_TIMEOUT_MS = 12_000;
 
-// The light theme's fixed colours, matching css/style.css.
-const ZONE = '#35d29a';
-const PIN = '#35d29a';
+// Fixed colours for the paper map. The zone green is deeper than the app's
+// own accent, which is mixed for a dark background and washes out on white.
+const ZONE = '#0b8f68';
+const PIN = '#0b8f68';
 const PIN_RING = '#ffffff';
 const INK = '#10151c';
 const INK_2 = '#48525f';
@@ -38,13 +41,20 @@ const SEA = '#e7ebef';
 const PIN_PATH = 'M12 21s6.5-6.2 6.5-11a6.5 6.5 0 1 0-13 0C5.5 14.8 12 21 12 21z';
 const FONT = '-apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, Roboto, sans-serif';
 
+/* Violet first: OSM Carto paints primary roads orange and trunk roads salmon,
+   so an orange route is easy to mistake for the map's own road colouring. No
+   green, since the zone outline is green. */
+const PAPER_PALETTE = ['#7c3aed', '#0284c7', '#c026d3', '#ea580c', '#e11d48',
+                       '#4f46e5', '#ca8a04', '#be123c', '#0369a1', '#a21caf'];
+
 /* sessions: [{ points: [[lat, lon], ...], label, meta }], one per session.
    regions:  the drawn area as a MultiPolygon in [lon, lat].
    start:    [lat, lon] of the start pin, or null.
-   palette:  line colours, one per session, cycled.
+   palette:  line colours, one per session, cycled; the paper palette by default.
    title:    one line for the legend's head, e.g. "12.3 km · 1 h 5 min".
    Resolves to a PNG Blob; rejects if the map cannot be drawn. */
-export async function mapSnapshot({ sessions, regions = [], start = null, palette, title = '' }) {
+export async function mapSnapshot({ sessions, regions = [], start = null,
+                                    palette = PAPER_PALETTE, title = '' }) {
   // Framed on the routes, the zones and the start together: a route that
   // covers a zone runs right along its edge, and the outline is part of what
   // the picture is for.
