@@ -110,6 +110,17 @@ export function ringBounds(ring) {
   return [minx, miny, maxx, maxy];
 }
 
+/* A *polygon* is an array of rings: the outline first, then any holes. Merging
+   zones can punch a hole - four rectangles laid out in a square leave the
+   middle uncovered - and a road in that middle is not one you asked for. */
+export function pointInPolygon(rings, x, y) {
+  if (!pointInRing(rings[0], x, y)) return false;
+  for (let i = 1; i < rings.length; i++) {
+    if (pointInRing(rings[i], x, y)) return false;
+  }
+  return true;
+}
+
 /* Non-zero winding rule, so a freehand loop that overlaps itself still counts
    everything it went round as inside. */
 export function pointInRing(ring, x, y) {
@@ -138,14 +149,13 @@ function crossingParam(ax, ay, bx, by, px, py, qx, qy) {
   return t;
 }
 
-/* How much of a polyline lies inside the ring, in degrees.
+/* How much of a polyline lies inside the polygon, in degrees.
 
-   Each segment is cut at every crossing with the ring's edges and each piece is
-   classified by its midpoint, so a road that dips in and out is measured
-   correctly rather than by its endpoints. */
-export function insideLengthDeg(geom, ring, bounds = ringBounds(ring)) {
+   Each segment is cut at every crossing with any of the polygon's rings and
+   each piece is classified by its midpoint, so a road that dips in and out - or
+   that crosses a hole - is measured correctly rather than by its endpoints. */
+export function insideLengthDeg(geom, rings, bounds = ringBounds(rings[0])) {
   const [minx, miny, maxx, maxy] = bounds;
-  const n = ring.length;
   let total = 0;
   const ts = [];
   for (let i = 2; i < geom.length; i += 2) {
@@ -157,18 +167,21 @@ export function insideLengthDeg(geom, ring, bounds = ringBounds(ring)) {
 
     ts.length = 0;
     ts.push(0, 1);
-    for (let k = 0; k < n; k++) {
-      const [px, py] = ring[k];
-      const [qx, qy] = ring[(k + 1) % n];
-      const t = crossingParam(ax, ay, bx, by, px, py, qx, qy);
-      if (t >= 0) ts.push(t);
+    for (const ring of rings) {
+      const n = ring.length;
+      for (let k = 0; k < n; k++) {
+        const [px, py] = ring[k];
+        const [qx, qy] = ring[(k + 1) % n];
+        const t = crossingParam(ax, ay, bx, by, px, py, qx, qy);
+        if (t >= 0) ts.push(t);
+      }
     }
     ts.sort((a, b) => a - b);
     for (let k = 1; k < ts.length; k++) {
       const t0 = ts[k - 1], t1 = ts[k];
       if (t1 - t0 < 1e-12) continue;
       const tm = (t0 + t1) / 2;
-      if (pointInRing(ring, ax + (bx - ax) * tm, ay + (by - ay) * tm)) {
+      if (pointInPolygon(rings, ax + (bx - ax) * tm, ay + (by - ay) * tm)) {
         total += (t1 - t0) * segLen;
       }
     }

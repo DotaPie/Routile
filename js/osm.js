@@ -23,7 +23,7 @@
    we measure it and say so. */
 
 import * as config from './config.js';
-import { geomLengthDeg, geomLengthM, haversineM, insideLengthDeg, pointInRing, ringBounds } from './geo.js';
+import { geomLengthDeg, geomLengthM, haversineM, insideLengthDeg, pointInPolygon, ringBounds } from './geo.js';
 import { Graph, stronglyConnectedComponents, weakComponents } from './graph.js';
 
 export class FetchError extends Error {}
@@ -387,9 +387,9 @@ export function buildGraph(elements, fetchBox, downloadBox) {
    length. Locally the degree-to-metre scale is constant, so this is accurate
    without a projection round trip. */
 export function markRequired(g, area, minInsideM) {
-  const rings = area.rings;
-  const boxes = rings.map(ringBounds);
-  // The union box, for the cheap reject that runs against every arc.
+  const regions = area.regions;
+  const boxes = regions.map((rings) => ringBounds(rings[0]));
+  // The box round the lot, for the cheap reject that runs against every arc.
   let minx = Infinity, miny = Infinity, maxx = -Infinity, maxy = -Infinity;
   for (const [x0, y0, x1, y1] of boxes) {
     if (x0 < minx) minx = x0; if (x1 > maxx) maxx = x1;
@@ -408,17 +408,17 @@ export function markRequired(g, area, minInsideM) {
 
     const degTotal = geomLengthDeg(geom);
     if (degTotal <= 0) {
-      if (rings.some((ring) => pointInRing(ring, geom[0], geom[1]))) required[a] = 1;
+      if (regions.some((rings) => pointInPolygon(rings, geom[0], geom[1]))) required[a] = 1;
       continue;
     }
-    // Summed across zones, then capped: a street running from one zone into
-    // the next is required on the strength of both halves together, while two
-    // zones that overlap cannot push a street past its own length.
+    // Summed across zones: the zones are merged before they get here, so they
+    // never overlap, and a street running from one into the next is required on
+    // the strength of both halves together.
     let degInside = 0;
-    for (let k = 0; k < rings.length && degInside < degTotal; k++) {
+    for (let k = 0; k < regions.length && degInside < degTotal; k++) {
       const [bx0, by0, bx1, by1] = boxes[k];
       if (gx1 < bx0 || gx0 > bx1 || gy1 < by0 || gy0 > by1) continue;
-      degInside += insideLengthDeg(geom, rings[k], boxes[k]);
+      degInside += insideLengthDeg(geom, regions[k], boxes[k]);
     }
     degInside = Math.min(degInside, degTotal);
     if (g.length[a] * (degInside / degTotal) >= minInsideM) required[a] = 1;

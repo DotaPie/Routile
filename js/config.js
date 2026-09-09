@@ -5,7 +5,7 @@
 
 // Bump on ANY algorithm change, or the result cache will serve stale routes
 // and you will chase phantom bugs.
-export const ALGO_VERSION = '6';
+export const ALGO_VERSION = '7';
 
 // ---------------------------------------------------------------- area limits
 // No product-level cap: draw whatever you like. This ceiling is deliberately far

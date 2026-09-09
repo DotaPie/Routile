@@ -123,15 +123,16 @@ function circleShape(data) {
   return { kind: 'circle', lon, lat, radius };
 }
 
-function polygonShape(data) {
-  const raw = data.points || [];
+/* [lat, lon] pairs in, an unclosed ring of [lon, lat] out. */
+function parseRing(raw, what) {
   const points = [];
-  for (const item of raw) {
+  for (const item of raw || []) {
     let lat, lon;
     if (Array.isArray(item)) { lat = num(item[0], 'lat'); lon = num(item[1], 'lon'); }
     else if (item && typeof item === 'object') { lat = num(item.lat, 'lat'); lon = num(item.lon ?? item.lng, 'lon'); }
-    else throw new AreaError('that outline has a malformed point');
-    // Freehand drawing emits repeats whenever the pointer pauses; drop them.
+    else throw new AreaError(`that ${what} has a malformed point`);
+    // Freehand drawing emits repeats whenever the pointer pauses, and a merged
+    // ring arrives closed; either way, drop the duplicate.
     const last = points[points.length - 1];
     if (!last || last[0] !== lon || last[1] !== lat) points.push([lon, lat]);
   }
@@ -139,8 +140,15 @@ function polygonShape(data) {
     const [a, b] = [points[0], points[points.length - 1]];
     if (a[0] === b[0] && a[1] === b[1]) points.pop();
   }
-  if (points.length < 3) throw new AreaError('that outline needs at least three points');
-  return { kind: 'polygon', points };
+  if (points.length < 3) throw new AreaError(`that ${what} needs at least three points`);
+  return points;
+}
+
+function polygonShape(data) {
+  const points = parseRing(data.points, 'outline');
+  // Merging zones can leave a hole; anything inside one is not covered.
+  const holes = (data.holes || []).map((ring) => parseRing(ring, 'hole'));
+  return { kind: 'polygon', points, holes };
 }
 
 /* Several zones as one area. Nested multis are flattened, so a payload built
@@ -176,13 +184,13 @@ function circleRing(lon, lat, radiusM) {
   return ring;
 }
 
-/* One zone as a ring of [lon, lat]. */
-function ringOfShape(shape) {
+/* One zone as a polygon: its outline first, then any holes. */
+function ringsOfShape(shape) {
   if (shape.kind === 'rect') {
-    return new BBox(shape.left, shape.bottom, shape.right, shape.top).ring();
+    return [new BBox(shape.left, shape.bottom, shape.right, shape.top).ring()];
   }
-  if (shape.kind === 'circle') return circleRing(shape.lon, shape.lat, shape.radius);
-  return shape.points;
+  if (shape.kind === 'circle') return [circleRing(shape.lon, shape.lat, shape.radius)];
+  return [shape.points, ...(shape.holes || [])];
 }
 
 function parseShape(data) {
@@ -200,9 +208,11 @@ export class Area {
     this.shape = shape;
     this.kind = shape.kind;
     this.parts = shape.kind === 'multi' ? shape.parts : [shape];
-    this.rings = this.parts.map(ringOfShape);
-    this.ring = this.rings[0];    // single-zone callers still read this
-    const [l, b, r, t] = ringBounds(this.rings.flat());
+    // One entry per zone: [outline, ...holes].
+    this.regions = this.parts.map(ringsOfShape);
+    this.ring = this.regions[0][0];   // single-zone callers still read this
+    const outlines = this.regions.map((rings) => rings[0]);
+    const [l, b, r, t] = ringBounds(outlines.flat());
     this.bounds = new BBox(l, b, r, t);   // what to download, not what to cover
   }
 
@@ -229,13 +239,15 @@ export class Area {
     return representativePoint(this.ring);
   }
 
-  /* Zones are summed, so overlapping ones are counted twice. Overlap is a
-     drawing mistake rather than a use case, and the figure only drives the
-     fetch buffer and the panel readout - never which roads are required. */
+  /* Zones reach here already merged, so they never overlap and this is a plain
+     sum: each outline less whatever its holes take back out. */
   areaKm2() {
     let total = 0;
-    for (const ring of this.rings) total += sphericalAreaM2(ring);
-    return total / 1e6;
+    for (const rings of this.regions) {
+      total += sphericalAreaM2(rings[0]);
+      for (let i = 1; i < rings.length; i++) total -= sphericalAreaM2(rings[i]);
+    }
+    return Math.max(total, 0) / 1e6;
   }
 
   validate(maxAreaKm2) {
@@ -265,16 +277,24 @@ export class Area {
   }
 }
 
+const ringKey = (ring, d) =>
+  ring.map(([x, y]) => `${x.toFixed(d)},${y.toFixed(d)}`).join(';');
+
 function shapeKey(s, decimals) {
   if (s.kind === 'rect') return ['rect', s.left, s.bottom, s.right, s.top].map(fix(decimals)).join(':');
   if (s.kind === 'circle') return ['circle', s.lon, s.lat, s.radius].map(fix(decimals)).join(':');
-  return 'polygon:' + s.points.map(([x, y]) => `${x.toFixed(decimals)},${y.toFixed(decimals)}`).join(';');
+  return ['polygon', ringKey(s.points, decimals),
+          ...(s.holes || []).map((h) => ringKey(h, decimals))].join('|');
 }
+
+const ringJSON = (ring) => ring.map(([x, y]) => [y, x]);
 
 function shapeJSON(s) {
   if (s.kind === 'rect') return { type: 'rect', left: s.left, bottom: s.bottom, right: s.right, top: s.top };
   if (s.kind === 'circle') return { type: 'circle', lon: s.lon, lat: s.lat, radius_m: Math.round(s.radius * 10) / 10 };
-  return { type: 'polygon', points: s.points.map(([x, y]) => [y, x]) };
+  const out = { type: 'polygon', points: ringJSON(s.points) };
+  if (s.holes && s.holes.length) out.holes = s.holes.map(ringJSON);
+  return out;
 }
 
 const fix = (decimals) => (v) => (typeof v === 'number' ? v.toFixed(decimals) : String(v));

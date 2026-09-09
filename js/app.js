@@ -49,8 +49,8 @@ const ARROW_ZOOM = 15;      // below this an arrow is smaller than the junction
 const POINT_ZOOM = 16;      // waypoints are dense; they need more room still
 
 const state = {
-  shapes: [],          // every drawn zone; they merge into one job
-  shapeLayers: [],     // index-aligned with shapes
+  regions: [],         // the merged area: a MultiPolygon in [lon, lat]
+  regionLayers: [],    // index-aligned with regions
   startLatLng: null,
   startMarker: null,
   routeLayers: [],     // one polyline per session, index-aligned with the legend
@@ -134,7 +134,7 @@ function applyTheme(name) {
   // Everything already on the map that carries a theme colour. The start pin
   // and the drawn zones take theirs from CSS variables, so the pin needs
   // nothing; the zones are Leaflet paths and do.
-  for (const layer of state.shapeLayers) layer.setStyle(AREA_STYLE());
+  for (const layer of state.regionLayers) layer.setStyle(AREA_STYLE());
   state.routeLayers.forEach((line, i) => {
     if (line) line.setStyle({ color: sessionColor(i) });
   });
@@ -352,34 +352,95 @@ mapEl.addEventListener('contextmenu', (ev) => {
 });
 
 /* ------------------------------------------------------- the drawn zones */
-/* Zones accumulate: each new one joins the rest rather than replacing it, and
-   they are computed as a single job. Clear starts over. */
+/* Every zone drawn is merged into the area straight away: two that overlap
+   become one shape with one outline, and one drawn over a gap between two
+   others joins all three. Zones that touch nothing stay separate regions of
+   the same area, computed as a single job. Clear starts over.
+
+   `state.regions` is a GeoJSON-style MultiPolygon in [lon, lat]: one entry per
+   separate region, each an outline followed by any holes. */
 function addShape(shape) {
-  state.shapes.push(shape);
-  state.shapeLayers.push(shapeLayer(shape).addTo(map));
+  const poly = [shapeRing(shape)];
+  let merged;
+  try {
+    // Unioning a lone polygon with itself is not a no-op: it also resolves a
+    // freehand outline that crossed itself, which would otherwise be ambiguous.
+    merged = state.regions.length
+      ? polygonClipping.union(state.regions, poly)
+      : polygonClipping.union(poly);
+  } catch (err) {
+    // Boolean ops can fail on a pathological outline. An unmerged zone is a
+    // poor second best, but it is far better than losing the drag entirely,
+    // and everything downstream copes with regions that overlap.
+    console.warn('could not merge that zone, keeping it separate', err);
+    merged = state.regions.concat([poly]);
+  }
+  state.regions = merged;
+  drawRegions();
   clearRoute();
   syncZones();
 }
 
 function clearZones() {
-  for (const layer of state.shapeLayers) map.removeLayer(layer);
-  state.shapeLayers = [];
-  state.shapes = [];
+  state.regions = [];
+  drawRegions();
   clearRoute();
   showError(null);
   syncZones();
 }
 
-/* One shape, or all of them as a single merged area. */
+function drawRegions() {
+  for (const layer of state.regionLayers) map.removeLayer(layer);
+  // Leaflet reads a polygon's rings as outline first, then holes - the same
+  // order polygon-clipping produces - so a merged hole draws as a hole.
+  state.regionLayers = state.regions.map((rings) =>
+    L.polygon(rings.map((ring) => ring.map(([x, y]) => [y, x])), AREA_STYLE())
+      .addTo(map));
+}
+
+/* A drawn shape as one closed ring of [lon, lat]. */
+function shapeRing(shape) {
+  let ring;
+  if (shape.type === 'rect') {
+    ring = [[shape.west, shape.south], [shape.east, shape.south],
+            [shape.east, shape.north], [shape.west, shape.north]];
+  } else if (shape.type === 'circle') {
+    // The same ellipse-in-degrees the pipeline builds for a circle, so what is
+    // merged is what the router will treat as required.
+    const dlat = (shape.radius_m / EARTH_R) * 180 / Math.PI;
+    const cosLat = Math.max(Math.cos(rad(shape.lat)), 1e-6);
+    const dlon = (shape.radius_m / (EARTH_R * cosLat)) * 180 / Math.PI;
+    ring = [];
+    for (let i = 0; i < CIRCLE_SEGMENTS; i++) {
+      const a = 2 * Math.PI * i / CIRCLE_SEGMENTS;
+      ring.push([shape.lon + dlon * Math.cos(a), shape.lat + dlat * Math.sin(a)]);
+    }
+  } else {
+    ring = shape.points.map(([lat, lng]) => [lng, lat]);
+  }
+  return ring.concat([ring[0]]);    // polygon-clipping wants closed rings
+}
+
+// Matches area.js, so the circle drawn, the circle merged and the circle the
+// router covers are the same 64-sided polygon.
+const CIRCLE_SEGMENTS = 64;
+const EARTH_R = 6_371_008.8;
+
+/* The merged area, as the pipeline's payload. */
 function shapePayload() {
-  if (!state.shapes.length) return null;
-  return state.shapes.length === 1
-    ? state.shapes[0]
-    : { type: 'multi', shapes: state.shapes };
+  if (!state.regions.length) return null;
+  const shapes = state.regions.map((rings) => {
+    const out = { type: 'polygon', points: rings[0].map(([x, y]) => [y, x]) };
+    if (rings.length > 1) {
+      out.holes = rings.slice(1).map((ring) => ring.map(([x, y]) => [y, x]));
+    }
+    return out;
+  });
+  return shapes.length === 1 ? shapes[0] : { type: 'multi', shapes };
 }
 
 function syncZones() {
-  const n = state.shapes.length;
+  const n = state.regions.length;
   $('clear-zones').disabled = n === 0;
   $('compute').disabled = n === 0;
 
@@ -389,58 +450,17 @@ function syncZones() {
     info.textContent = '--';
     return;
   }
-  // The rough figure lands the instant the mouse comes up; the exact geodesic
-  // one replaces it a moment later.
-  info.textContent = areaText(
-    state.shapes.reduce((sum, s) => sum + roughKm2(s), 0), n
-  );
-  scheduleCheck();
+  // Run now rather than on the debounce: the exact geodesic figure costs a
+  // fraction of a millisecond, and a placeholder that flickers for 200 ms is
+  // worse than no placeholder at all.
+  runCheck();
 }
 
 function areaText(km2, zones) {
   return `${km2.toFixed(2)} km²${zones > 1 ? ` · ${zones} zones` : ''}`;
 }
 
-function shapeLayer(shape) {
-  if (shape.type === 'rect') {
-    return L.rectangle(
-      L.latLngBounds([shape.south, shape.west], [shape.north, shape.east]),
-      AREA_STYLE(),
-    );
-  }
-  if (shape.type === 'circle') {
-    return L.circle([shape.lat, shape.lon],
-      { radius: shape.radius_m, ...AREA_STYLE() });
-  }
-  return L.polygon(shape.points, AREA_STYLE());
-}
-
-// Rough, for instant feedback the moment the mouse comes up. Longitude degrees
-// shrink with latitude, hence the cosines - at latitude 48 a degree of
-// longitude is 74 km against 111 for latitude, so leaving that out would
-// overstate every area by about 1.5x.
 const KM_PER_DEG = 111.32;
-
-function roughKm2(shape) {
-  if (shape.type === 'circle') {
-    return Math.PI * (shape.radius_m / 1000) ** 2;
-  }
-  if (shape.type === 'rect') {
-    const midLat = (shape.north + shape.south) / 2;
-    return (shape.north - shape.south) * KM_PER_DEG
-      * (shape.east - shape.west) * KM_PER_DEG * Math.cos(rad(midLat));
-  }
-  // Shoelace, with both axes converted to kilometres first.
-  const pts = shape.points;
-  const midLat = pts.reduce((sum, p) => sum + p[0], 0) / pts.length;
-  const kx = KM_PER_DEG * Math.cos(rad(midLat));
-  let twice = 0;
-  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
-    twice += (pts[j][1] * kx) * (pts[i][0] * KM_PER_DEG)
-           - (pts[i][1] * kx) * (pts[j][0] * KM_PER_DEG);
-  }
-  return Math.abs(twice) / 2;
-}
 
 function rad(deg) { return deg * Math.PI / 180; }
 
@@ -593,11 +613,10 @@ function scheduleCheck() {
   state.checkTimer = setTimeout(runCheck, 200);
 }
 
-/* Settings and zones checked together, and the exact geodesic area worked out
-   while we are here: a circle or a freehand loop cannot be measured by the
-   rough formula that ran on mouse-up. */
+/* Settings and zones checked together, and the exact geodesic area of the
+   merged shape worked out while we are here. */
 function runCheck() {
-  if (!state.shapes.length) return;
+  if (!state.regions.length) return;
 
   const problem = validate();
   if (problem) {
@@ -617,7 +636,7 @@ function runCheck() {
   }
   showError(null);
   $('compute').disabled = false;
-  $('area-info').textContent = areaText(area.areaKm2(), state.shapes.length);
+  $('area-info').textContent = areaText(area.areaKm2(), state.regions.length);
 }
 
 ['passes', 'session', 'dir-oneway', 'dir-both', 'session-enabled'].forEach((id) => {
@@ -629,8 +648,16 @@ function runCheck() {
 });
 
 /* --------------------------------------------------------------- compute */
-// The pipeline runs in a worker so the page stays responsive while it works.
-const worker = new Worker(new URL('./worker.js', import.meta.url), { type: 'module' });
+/* The pipeline runs in a worker so the page stays responsive while it works.
+
+   The version in the URL is not decoration. Browsers cache a module worker's
+   script graph hard - Firefox keeps serving the old one through an ordinary
+   reload - so without it a changed pipeline can go on running the previous
+   code, which looks exactly like a bug in the new code. */
+const worker = new Worker(
+  new URL(`./worker.js?v=${config.ALGO_VERSION}`, import.meta.url),
+  { type: 'module' },
+);
 
 worker.onmessage = (ev) => {
   const msg = ev.data;
@@ -658,7 +685,7 @@ worker.onerror = (ev) => {
 };
 
 $('compute').onclick = () => {
-  if (!state.shapes.length) return;
+  if (!state.regions.length) return;
   const problem = validate();
   if (problem) { showError(problem); return; }
 
@@ -678,7 +705,7 @@ function finishJob() {
   clearInterval(state.ticker);
   state.ticker = null;
   hideProgress();
-  $('compute').disabled = state.shapes.length === 0;
+  $('compute').disabled = state.regions.length === 0;
 }
 
 function friendlyError(message) {
