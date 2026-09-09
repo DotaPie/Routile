@@ -23,7 +23,7 @@ The download is always a `.zip`, containing:
 - **`routile-route.gpx`**, the whole drive as one file — or **`routile-session-01.gpx`, `-02.gpx`, …** if you split it into sessions
 - **`map.png`**, a picture of the route on the map, start pin included
 
-Open a GPX file in OsmAnd (Navigation, then Follow track), Locus Map or a Garmin device, and it drives every street in order.
+Use for example OsmAnd [![Android](https://img.shields.io/badge/-3DDC84?logo=android&logoColor=white)](https://play.google.com/store/apps/details?id=net.osmand) [![iOS](https://img.shields.io/badge/-0D96F6?logo=apple&logoColor=white)](https://apps.apple.com/app/osmand-maps-travel-navigate/id934850257) to navigate with GPX file.
 
 ---
 
