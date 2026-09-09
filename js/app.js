@@ -1040,39 +1040,43 @@ function buildLegend(sessions) {
 }
 
 /* The top bar floats centred over the map with the session list in the corner
-   beside it, and gives way in two steps as the window narrows: first the tools
-   drop their labels, then - if even the icons would run into the sessions -
-   the whole bar, search box and all, comes out of the map and stacks below it
-   with the sessions underneath.
+   beside it, and gives way in three steps as the window narrows: the tools
+   drop their labels, then the bar gives up the centre and slides left to use
+   the empty half of the map, and only when even that will not clear the
+   sessions does the whole bar - search box and all - come out of the map and
+   stack below it with the sessions underneath.
 
    Measured rather than guessed from a breakpoint, because how much room the
    bar needs depends on its labels and how much is left depends on whether
    there are any sessions to list at all. Each step is decided by trying it:
    the classes come off, the bar is measured at its natural width (see the
-   max-content in the stylesheet), and a step is added only while it still
-   does not fit. */
+   max-content in the stylesheet), and the next step is added only while it
+   still does not fit.
+
+   The steps are cumulative, and deliberately so: a narrower window can only
+   ever take more away, never hand the labels back. Reaching the bar's dock at
+   one width and its labels at a narrower one would have the tools flickering
+   in and out as the window is dragged. */
 const phoneLayout = window.matchMedia('(max-width: 860px)');
 phoneLayout.addEventListener('change', () => layoutOverlays());
 
 function layoutOverlays() {
   const stage = $('stage');
-  stage.classList.remove('tools-tight', 'tools-docked');
+  stage.classList.remove('tools-tight', 'tools-left', 'tools-docked');
   // A phone stacks the panel above the map and everything else below it, so
-  // there is nothing left over the map to make room in.
+  // there is nothing left over the map to make room in - it is the last step
+  // of the three, arrived at directly.
   if (phoneLayout.matches) {
-    stage.classList.add('tools-docked');
-  } else {
-    if (barIsCrowded()) stage.classList.add('tools-tight');
-    if (barIsCrowded()) stage.classList.add('tools-docked');
+    stage.classList.add('tools-tight', 'tools-left', 'tools-docked');
+    return;
   }
-  // Docked, the bar has the width of the stage and the search box wraps to a
-  // line of its own - but the tools still give up their labels rather than run
-  // off the end of theirs.
-  if (toolsOverflow()) stage.classList.add('tools-tight');
+  if (barIsCrowded()) stage.classList.add('tools-tight');
+  if (barIsCrowded()) stage.classList.add('tools-left');
+  if (barIsCrowded()) stage.classList.add('tools-docked');
 }
 
-/* Does the bar, at the width it currently has, still clear both edges of the
-   stage and the session list on its right? */
+/* Does the bar, at the width and place it currently has, still clear both
+   edges of the stage and the session list on its right? */
 function barIsCrowded() {
   const stage = $('stage').getBoundingClientRect();
   const bar = $('topbar').getBoundingClientRect();
@@ -1081,13 +1085,6 @@ function barIsCrowded() {
   const legend = $('legend');
   if (legend.classList.contains('hidden')) return false;
   return bar.right + clear > legend.getBoundingClientRect().left;
-}
-
-/* Only ever true of a docked bar: floating, it is sized to its own content and
-   the tools cannot overflow it. */
-function toolsOverflow() {
-  const bar = $('topbar');
-  return bar.scrollWidth > bar.clientWidth;
 }
 
 /* Two layers of the same highlight, both driven from the legend alone.

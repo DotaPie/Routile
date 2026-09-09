@@ -434,17 +434,22 @@ html, body {
 }
 
 /* ------------------------------------------------- the bar giving way */
-/* Two steps, both switched on by layoutOverlays() once it has measured that
+/* Three steps, each switched on by layoutOverlays() once it has measured that
    the bar no longer clears the session list beside it. First the tools drop
-   their labels and go to icons only, which is usually enough... */
+   their labels and go to icons only... */
 #stage.tools-tight .tool span { display: none; }
 #stage.tools-tight .tool { padding: 8px 10px; }
 #stage.tools-tight .tool-sep { margin: 3px 0; }
 
-/* ... and if even the icons would run into the sessions, the whole bar comes
-   out of the map and stacks below it, the sessions following underneath.
-   Floating it on top of a map this narrow would cover the very thing the bar
-   is there to help you use. */
+/* ... then the bar gives up the centre. The sessions sit in the right corner,
+   so the room that is left is all on the left; centred, the bar would rather
+   dock than use it. */
+#stage.tools-left #topbar { left: 14px; transform: none; }
+
+/* ... and only if even a left-hand icon bar would run into the sessions does
+   the whole thing come out of the map and stack below it, the sessions
+   following underneath. Floating it on top of a map this narrow would cover
+   the very thing the bar is there to help you use. */
 #stage.tools-docked #topbar {
   position: static;
   transform: none;
