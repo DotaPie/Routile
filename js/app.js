@@ -314,8 +314,8 @@ map.on('click', (ev) => {
     setMode(state.lastShape);
     return;
   }
-  // Reached only when the click missed every route line - those stop the event
-  // themselves - so this is the "clicked empty map" case: let go.
+  // Nothing on the map catches a click, so any click here is "clicked the
+  // map": let go of whatever the legend has pinned.
   if (state.pinned !== null) pin(null);
 });
 
@@ -487,7 +487,7 @@ function setStart(latlng) {
   $('pin-info').classList.remove('muted');
   $('pin-info').textContent =
     `${latlng.lat.toFixed(4)}, ${latlng.lng.toFixed(4)}`;
-  $('pin-check').classList.remove('hidden');
+  $('mode-pin').classList.add('has-start');
   syncClear();
 }
 
@@ -497,7 +497,7 @@ function clearStart() {
   state.startMarker = null;
   $('pin-info').classList.add('muted');
   $('pin-info').textContent = 'area centre';
-  $('pin-check').classList.add('hidden');
+  $('mode-pin').classList.remove('has-start');
   syncClear();
 }
 
@@ -923,15 +923,14 @@ function drawSessions(res, track) {
     const raw = sessionSlice(res, track, session) || [];
     if (raw.length < 2) return;
     const points = offsetRight(raw, OFFSET_M);
+    // interactive:false: a route line is drawn output, not a control. The
+    // legend is where a session is hovered and picked - a line under the
+    // pointer must not take the pointer cursor, catch a click meant for the
+    // map, or swap the highlight while you are drawing the next zone over it.
     const line = L.polyline(points, {
       color: sessionColor(i), weight: ROUTE_WEIGHT, opacity: 0.85,
+      interactive: false,
     }).addTo(map);
-    line.on('mouseover', () => hover(i));
-    line.on('mouseout', () => hover(null));
-    line.on('click', (ev) => {
-      L.DomEvent.stopPropagation(ev);   // or the map clears it again immediately
-      pin(state.pinned === i ? null : i);
-    });
     state.routeLayers[i] = line;
     state.sessionPoints[i] = points;
   });
@@ -1055,10 +1054,11 @@ function placeLegend() {
 }
 new ResizeObserver(() => placeLegend()).observe($('map'));
 
-/* Two layers of the same highlight. Hovering previews a session; clicking pins
-   it so it survives the pointer moving away, which is what you want while
-   reading a leg off the map. Clicking it again, or clicking empty map, lets go.
-   With something pinned, moving off a hover falls back to it rather than to
+/* Two layers of the same highlight, both driven from the legend alone.
+   Hovering a row previews that session; clicking it pins it so it survives the
+   pointer leaving the legend, which is what you want while reading a leg off
+   the map. Clicking the row again, or clicking the map, lets go. With
+   something pinned, moving off a hover falls back to it rather than to
    nothing. */
 function hover(index, { scroll = true } = {}) {
   state.hovered = index;
@@ -1080,10 +1080,6 @@ function applyHighlight(index, { scroll = true } = {}) {
     if (!line) return;
     const hidden = index !== null && i !== index;
     line.setStyle({ opacity: hidden ? 0 : 0.85 });
-    // A hidden line must not catch the pointer either, or brushing over where
-    // it was would swap the highlight to a session nobody can see.
-    const el = line.getElement();
-    if (el) el.style.pointerEvents = hidden ? 'none' : '';
     if (i === index) line.bringToFront();
   });
 

@@ -89,8 +89,8 @@ function describe(result, waypointCount, session) {
 
 /* The download: always one zip, whatever the session count, so what comes
    out is the same package every time - the GPX (one file for a single
-   session, one per session otherwise), the map picture when there is one,
-   and a README. Needs the JSZip global. */
+   session, one per session otherwise) and the map picture when there is one.
+   Needs the JSZip global. */
 export async function gpxZip(result, { image = null } = {}) {
   const sessions = result.sessions || [];
   const zip = new JSZip();
@@ -107,33 +107,5 @@ export async function gpxZip(result, { image = null } = {}) {
     });
   }
   if (image) zip.file('map.png', image);
-  zip.file('README.txt', zipReadme(result, sessions, Boolean(image)));
   return zip.generateAsync({ type: 'blob', compression: 'DEFLATE' });
-}
-
-function zipReadme(result, sessions, hasImage) {
-  const st = result.stats || {};
-  const many = sessions.length > 1;
-  const lines = [
-    'Routile - drive every road in an area',
-    '',
-    `Total: ${st.total_km} km, ${st.duration}, ${sessions.length} session(s).`,
-    (result.coverage || {}).summary || '',
-    '',
-    many ? 'routile-session-NN.gpx  one GPX file per session, in driving order'
-         : 'routile-route.gpx       the whole route as one GPX file',
-  ];
-  if (hasImage) lines.push('map.png                 the route drawn on the map, start pin included');
-  lines.push(
-    '',
-    'Open the GPX file(s) in OsmAnd mobile app, for example, and follow the',
-    'track: it drives every street in order.',
-  );
-  if (many) {
-    lines.push('', 'Sessions:');
-    for (const s of sessions) {
-      lines.push(`  ${String(s.index + 1).padStart(3)}. ${s.km.toFixed(2).padStart(7)} km  ${String(Math.round(s.minutes)).padStart(5)} min`);
-    }
-  }
-  return lines.join('\n') + '\n';
 }

@@ -212,11 +212,11 @@ html, body {
   fill: none; stroke: currentColor; stroke-width: 1.7;
   stroke-linecap: round; stroke-linejoin: round;
 }
-.tool .check {
-  width: 14px; height: 14px; stroke-width: 3;
-  color: var(--good); margin-left: 1px;
-}
-.tool.active .check { color: var(--on-accent); opacity: 0.75; }
+/* A start is on the map: the pin glyph wears the accent, so the tool bar says
+   so without a second glyph. While the tool itself is armed the button is
+   already accent-filled, so the glyph goes back to the on-accent ink or it
+   would vanish into its own background. */
+.tool.has-start:not(.active) svg { color: var(--accent); }
 .tool.danger:hover:not(:disabled) { background: var(--bad-soft); color: var(--bad); }
 .tool:disabled { opacity: 0.38; cursor: default; }
 .tool:disabled:hover { background: transparent; color: var(--ink-2); }
