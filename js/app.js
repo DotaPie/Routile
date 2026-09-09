@@ -9,39 +9,33 @@ const $ = (id) => document.getElementById(id);
 // The three ways to draw. Each one is a full drag gesture: press, move, release.
 const SHAPES = ['rect', 'circle', 'freehand'];
 
-/* Two basemaps and two route palettes, because a route drawn for a paper-white
-   OSM tile disappears on a dark one and the other way round. Each palette
-   leaves out its own theme's accent hue: the drawn zones wear that, and a
-   session line the same colour as the zone outline reads as part of it. */
-const THEMES = {
-  dark: {
-    url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
-    subdomains: 'abcd',
-    maxZoom: 20,
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> '
-      + 'contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
-    // Bright, and no green.
-    sessions: ['#a78bfa', '#22d3ee', '#f472b6', '#fb923c', '#facc15',
-               '#f87171', '#60a5fa', '#e879f9', '#38bdf8', '#fda4af'],
-  },
-  light: {
-    url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-    subdomains: 'abc',
-    maxZoom: 19,
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-    // Violet first: OSM Carto paints primary roads orange and trunk roads
-    // salmon, so an orange route is easy to mistake for the map's own road
-    // colouring. Blue is left out entirely, since the drawn zones are blue.
-    sessions: ['#7c3aed', '#0d9488', '#c026d3', '#ea580c', '#65a30d',
-               '#e11d48', '#0284c7', '#ca8a04', '#059669', '#be123c'],
-  },
+/* One route palette per theme, because a route drawn for a paper-white OSM tile
+   disappears on a dark one and the other way round. Each palette leaves out its
+   own theme's accent hue: the drawn zones wear that, and a session line the
+   same colour as the zone outline reads as part of it.
+
+   The dark basemap is the same OSM tile inverted in CSS - see the filter on
+   .leaflet-tile-pane. Every keyless dark tile service worth using has since
+   grown an API key, and one basemap that needs no account is worth more here
+   than a perfectly hand-styled one that does. */
+const SESSION_COLORS = {
+  // Bright, and no green: green is the dark theme's accent.
+  dark: ['#a78bfa', '#22d3ee', '#f472b6', '#fb923c', '#facc15',
+         '#f87171', '#60a5fa', '#e879f9', '#38bdf8', '#fda4af'],
+  // Violet first: OSM Carto paints primary roads orange and trunk roads
+  // salmon, so an orange route is easy to mistake for the map's own road
+  // colouring. Blue is left out entirely, since the drawn zones are blue.
+  light: ['#7c3aed', '#0d9488', '#c026d3', '#ea580c', '#65a30d',
+          '#e11d48', '#0284c7', '#ca8a04', '#059669', '#be123c'],
 };
 
 const THEME_KEY = 'routile-theme';
 const themeName = () =>
   (document.documentElement.dataset.theme === 'light' ? 'light' : 'dark');
-const theme = () => THEMES[themeName()];
-const sessionColor = (i) => theme().sessions[i % theme().sessions.length];
+const sessionColor = (i) => {
+  const palette = SESSION_COLORS[themeName()];
+  return palette[i % palette.length];
+};
 
 const ROUTE_WEIGHT = 3;
 const ROUTE_WEIGHT_HOT = 6.5;
@@ -59,7 +53,6 @@ const state = {
   shapeLayers: [],     // index-aligned with shapes
   startLatLng: null,
   startMarker: null,
-  tileLayer: null,
   routeLayers: [],     // one polyline per session, index-aligned with the legend
   sessionPoints: [],   // the offset points behind each of those polylines
   arrowsBySession: [],
@@ -128,16 +121,15 @@ state.arrowLayer = L.layerGroup().addTo(map);
 state.pointLayer = L.layerGroup().addTo(map);
 map.on('moveend zoomend', () => refreshDetail());
 
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  maxZoom: 19,
+  attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+}).addTo(map);
+
 /* ---------------------------------------------------------------- theme */
 function applyTheme(name) {
   document.documentElement.dataset.theme = name;
   try { localStorage.setItem(THEME_KEY, name); } catch (err) { /* private mode */ }
-
-  const t = THEMES[name];
-  if (state.tileLayer) map.removeLayer(state.tileLayer);
-  state.tileLayer = L.tileLayer(t.url, {
-    subdomains: t.subdomains, maxZoom: t.maxZoom, attribution: t.attribution,
-  }).addTo(map);
 
   // Everything already on the map that carries a theme colour. The start pin
   // and the drawn zones take theirs from CSS variables, so the pin needs

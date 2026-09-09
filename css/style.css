@@ -357,6 +357,15 @@ html, body {
 
 .leaflet-container { background: var(--map-bg); }
 
+/* The dark basemap. Inverting the standard OSM tile and rotating the hue back
+   through half a turn keeps water blue and parks green while turning the paper
+   to ink - so there is one tile source, no account and no API key.
+   Only the tile pane is touched: the routes, zones, pins and controls live in
+   their own panes and must keep the colours they were given. */
+:root[data-theme="dark"] .leaflet-tile-pane {
+  filter: invert(1) hue-rotate(180deg) brightness(0.94) contrast(0.92) saturate(0.85);
+}
+
 /* Leaflet gives every drawn path `cursor: pointer`, which would say "click me"
    right where you are trying to start the next zone. While a draw tool is
    active the whole map keeps the drawing cursor, paths included. */
