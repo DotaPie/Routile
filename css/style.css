@@ -79,7 +79,7 @@ html, body {
 .logo {
   width: 0.86em; height: 1.12em;
   vertical-align: -0.19em;
-  margin-right: 0.05em;
+  margin-right: -0.02em;   /* tucked against the o; the glyph box has slack */
   color: var(--accent);
   fill: none; stroke: currentColor; stroke-width: 2.9;
   stroke-linecap: round; stroke-linejoin: round;
