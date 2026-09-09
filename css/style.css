@@ -90,16 +90,21 @@ html, body {
   display: flex; align-items: center; justify-content: space-between; gap: 10px;
   margin-bottom: 18px;
 }
-.brand { display: flex; align-items: center; gap: 9px; min-width: 0; }
+.brand { display: flex; align-items: center; min-width: 0; }
 .brand h1 {
   margin: 0;
   font-family: "Space Grotesk", "Segoe UI", system-ui, sans-serif;
   font-size: 22px; font-weight: 600; letter-spacing: -0.015em;
+  white-space: nowrap;
 }
+/* The R. Sized so its stem stands cap-high on the text baseline, with the
+   destination dot hanging just below it like a dropped pin. */
 .logo {
-  width: 26px; height: 26px; flex: 0 0 auto;
+  width: 0.86em; height: 1.12em;
+  vertical-align: -0.19em;
+  margin-right: 0.05em;
   color: var(--accent);
-  fill: none; stroke: currentColor; stroke-width: 2.1;
+  fill: none; stroke: currentColor; stroke-width: 2.9;
   stroke-linecap: round; stroke-linejoin: round;
 }
 .logo-dot { fill: currentColor; stroke: none; }
@@ -129,7 +134,6 @@ html, body {
   z-index: 500;
   top: 14px; left: 50%;
   transform: translateX(-50%);
-  display: flex; align-items: flex-start; gap: 8px;
   max-width: calc(100% - 20px);
 }
 .card {
@@ -141,10 +145,14 @@ html, body {
 }
 
 /* ------------------------------------------------------------ place search */
+/* Bottom left, clear of the tools above and the attribution to the right. */
 .search {
+  position: absolute;
+  z-index: 500;
+  left: 14px; bottom: 14px;
   display: flex; align-items: center; gap: 6px;
   padding: 4px 4px 4px 10px;
-  min-width: 0;
+  max-width: calc(100% - 28px);
 }
 .search-icon {
   width: 15px; height: 15px; flex: 0 0 auto;
@@ -153,7 +161,7 @@ html, body {
   stroke-linecap: round; stroke-linejoin: round;
 }
 .search input {
-  width: 168px; min-width: 0;
+  width: 200px; min-width: 0;
   font: inherit; font-size: 13px;
   color: var(--ink); background: transparent;
   border: 0; padding: 6px 0;
@@ -308,10 +316,11 @@ html, body {
 }
 .segmented label:hover span { color: var(--ink); }
 .segmented input:checked + span {
-  background: var(--panel); color: var(--ink); font-weight: 580;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18);
+  background: var(--accent); color: var(--on-accent); font-weight: 580;
+  box-shadow: var(--shadow);
 }
-.segmented input:focus-visible + span { box-shadow: 0 0 0 2px var(--accent); }
+.segmented label:hover input:checked + span { color: var(--on-accent); }
+.segmented input:focus-visible + span { box-shadow: 0 0 0 3px var(--focus); }
 
 /* --------------------------------------------------------------- switch */
 .switch {
@@ -389,18 +398,50 @@ html, body {
 #map.grabbing .leaflet-container,
 #map.grabbing .leaflet-interactive { cursor: grabbing; }
 /* ... but the panels floating on top of the map are still controls. */
-#map #topbar, #map .legend { cursor: default; }
+#map #topbar, #map #search, #map .legend { cursor: default; }
 #map .tool, #map .legend-item, #map .search-go { cursor: pointer; }
 #map .search input { cursor: text; }
 
-/* Keep Leaflet's own controls clear of the centred toolbar, and in theme. */
-.leaflet-top.leaflet-left { margin-top: 2px; }
-:root[data-theme="dark"] .leaflet-bar a,
-:root[data-theme="dark"] .leaflet-control-attribution {
-  background: var(--panel); color: var(--ink-2); border-color: var(--line);
+/* ------------------------------------------------------ leaflet controls */
+/* The zoom buttons are dressed as the tool bar is - same glass card, same
+   icon buttons, same hover - so the map has one family of controls. The
+   selectors carry #map to outrank Leaflet's own .leaflet-touch rules. */
+.leaflet-top .leaflet-control { margin-top: 14px; }
+.leaflet-left .leaflet-control { margin-left: 14px; }
+#map .leaflet-control-zoom {
+  display: flex; flex-direction: column; gap: 3px;
+  padding: 4px;
+  background: var(--glass);
+  backdrop-filter: blur(8px);
+  border: 1px solid var(--line-2);
+  border-radius: 12px;
+  box-shadow: var(--shadow-lg);
 }
-:root[data-theme="dark"] .leaflet-bar a:hover { background: var(--hover); color: var(--ink); }
-:root[data-theme="dark"] .leaflet-bar a.leaflet-disabled { background: var(--panel-2); color: var(--ink-3); }
+#map .leaflet-control-zoom a {
+  display: grid; place-items: center;
+  width: 34px; height: 34px;
+  color: var(--ink-2);
+  background: transparent; border: 0; border-radius: 8px;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+#map .leaflet-control-zoom a:hover { background: var(--hover); color: var(--ink); }
+#map .leaflet-control-zoom a.leaflet-disabled { opacity: 0.38; }
+#map .leaflet-control-zoom a.leaflet-disabled:hover { background: transparent; color: var(--ink-2); }
+#map .leaflet-control-zoom a:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+#map .leaflet-control-zoom svg {
+  width: 17px; height: 17px;
+  fill: none; stroke: currentColor; stroke-width: 1.7;
+  stroke-linecap: round; stroke-linejoin: round;
+}
+#map .leaflet-control-zoom-in { position: relative; }
+/* A hairline between the two, as between the tool groups. */
+#map .leaflet-control-zoom-in::after {
+  content: ""; position: absolute; left: 6px; right: 6px; bottom: -2px;
+  height: 1px; background: var(--line-2);
+}
+:root[data-theme="dark"] .leaflet-control-attribution {
+  background: var(--panel); color: var(--ink-2);
+}
 :root[data-theme="dark"] .leaflet-control-attribution a { color: var(--accent); }
 
 /* -------------------------------------------------------- route arrows */
@@ -443,10 +484,18 @@ html, body {
   background: transparent; border: 0; border-radius: 8px;
   transition: background 0.12s ease;
 }
-.legend-item:hover, .legend-item.active { background: var(--hover); }
+/* The lit row wears the accent as a border and a tint: a shade of the glass
+   alone is too close to the glass to see, on a dark map above all. */
+.legend-item:hover, .legend-item.active {
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1.5px var(--accent);
+}
 /* Pinned by a click, so it survives the pointer moving away. */
-.legend-item.pinned { background: var(--accent-soft); }
-.legend-item.pinned .legend-name { font-weight: 680; }
+.legend-item.pinned {
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1.5px var(--accent);
+}
+.legend-item.pinned .legend-name { font-weight: 680; color: var(--accent); }
 .legend-item:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .legend-item .swatch {
   flex: 0 0 auto;
@@ -464,11 +513,14 @@ html, body {
   font-variant-numeric: tabular-nums;
 }
 
-/* The search and the tools cannot both keep full width on a phone, so the
-   search drops to an icon-width field and the tools to icons only. */
-@media (max-width: 1080px) {
-  .search input { width: 118px; }
+/* Once the map is too narrow for the labelled tools to clear the zoom buttons
+   on their left, the tools drop to icons only. */
+@media (max-width: 1100px) {
+  .tool span { display: none; }
+  .tool { padding: 8px 10px; }
+  .tool-sep { margin: 3px 0; }
 }
+/* On a phone the panel stacks above the map and the search field narrows. */
 @media (max-width: 860px) {
   #shell { flex-direction: column; }
   #panel {
@@ -476,12 +528,11 @@ html, body {
     border-bottom: 1px solid var(--line); max-height: 56%;
   }
   #map { min-height: 44vh; }
-  #topbar { top: 10px; gap: 6px; }
-  .tool span { display: none; }
-  .tool { padding: 8px 10px; }
-  .tool-sep { margin: 3px 0; }
-  .search { padding-left: 8px; }
-  .search input { width: 96px; }
-  /* Below the toolbar rather than beside it - there is no room for both. */
-  .legend { top: 56px; right: 10px; width: 168px; max-height: calc(100% - 70px); }
+  #topbar { top: 10px; }
+  .search { left: 10px; bottom: 10px; padding-left: 8px; }
+  .search input { width: 140px; }
+  .leaflet-top .leaflet-control { margin-top: 10px; }
+  .leaflet-left .leaflet-control { margin-left: 10px; }
+  /* Its top is set from script when it would collide with the tool bar. */
+  .legend { right: 10px; width: 168px; }
 }

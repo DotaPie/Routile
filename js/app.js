@@ -2,7 +2,8 @@
 
 import * as config from './config.js';
 import { Area } from './area.js';
-import { gpxDocument, gpxZip } from './gpx.js';
+import { gpxZip } from './gpx.js';
+import { mapSnapshot } from './snapshot.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -38,7 +39,6 @@ const sessionColor = (i) => {
 };
 
 const ROUTE_WEIGHT = 3;
-const ROUTE_WEIGHT_HOT = 6.5;
 
 // Half a carriageway. Each pass is drawn this far to the right of its own
 // direction of travel, so a street driven both ways shows as two lines rather
@@ -74,8 +74,19 @@ const state = {
 /* ------------------------------------------------------------------ map */
 // boxZoom off: Leaflet binds shift+drag to box zoom, which would fight
 // shift+drag drawing.
-const map = L.map('map', { zoomControl: true, boxZoom: false })
+const map = L.map('map', { zoomControl: false, boxZoom: false })
   .setView([48.148, 17.107], 14);
+
+// Leaflet's zoom buttons, with the same line icons as the tool bar and no
+// hover titles: nothing on this map pops text up under the pointer.
+const zoomGlyph = (d) =>
+  `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${d}"/></svg>`;
+L.control.zoom({
+  zoomInText: zoomGlyph('M12 5v14M5 12h14'), zoomInTitle: '',
+  zoomOutText: zoomGlyph('M5 12h14'), zoomOutTitle: '',
+}).addTo(map);
+// The default prefix carries a title tooltip; this one is the same credit without it.
+map.attributionControl.setPrefix('<a href="https://leafletjs.com">Leaflet</a>');
 
 const cssVar = (name) =>
   getComputedStyle(document.documentElement).getPropertyValue(name).trim();
@@ -100,12 +111,11 @@ const START_ICON = L.divIcon({
       + '<circle cx="12" cy="10" r="2.6"/></svg>',
   iconSize: [60, 60],
   iconAnchor: [30, 54],      // the pin's tip, not its centre, marks the spot
-  tooltipAnchor: [0, -48],
 });
 
 // These sit inside the map container, so Leaflet must not treat clicks and
 // drags on them as map gestures.
-for (const id of ['topbar', 'legend']) {
+for (const id of ['topbar', 'search', 'legend']) {
   L.DomEvent.disableClickPropagation($(id));
   L.DomEvent.disableScrollPropagation($(id));
 }
@@ -123,6 +133,9 @@ map.on('moveend zoomend', () => refreshDetail());
 
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
   maxZoom: 19,
+  // Fetched with CORS, so the same cached tiles may be drawn onto the canvas
+  // behind the exported map image. OSM's tile servers allow any origin.
+  crossOrigin: 'anonymous',
   attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
 }).addTo(map);
 
@@ -320,7 +333,7 @@ let tempPan = null;
 
 mapEl.addEventListener('mousedown', (ev) => {
   if (tempPan || !PAN_BUTTONS.has(ev.button)) return;
-  if (ev.target.closest('#topbar, .legend, .leaflet-control')) return;
+  if (ev.target.closest('#topbar, #search, .legend, .leaflet-control')) return;
   ev.preventDefault();
   if (drag) finishDrag(null);     // a half-drawn zone is abandoned, not kept
   tempPan = { mode: state.mode, x: ev.clientX, y: ev.clientY };
@@ -347,7 +360,7 @@ document.addEventListener('mouseup', (ev) => {
 // The right button is a pan grip here, so its menu would fire on every release
 // - except over the search box, where a paste menu is the whole point.
 mapEl.addEventListener('contextmenu', (ev) => {
-  if (ev.target.closest('#topbar')) return;
+  if (ev.target.closest('#search')) return;
   ev.preventDefault();
 });
 
@@ -381,10 +394,12 @@ function addShape(shape) {
   syncZones();
 }
 
+/* Clear means start over: the zones, the route and the start pin all go. */
 function clearZones() {
   state.regions = [];
   drawRegions();
   clearRoute();
+  clearStart();
   showError(null);
   syncZones();
 }
@@ -441,7 +456,7 @@ function shapePayload() {
 
 function syncZones() {
   const n = state.regions.length;
-  $('clear-zones').disabled = n === 0;
+  syncClear();
   $('compute').disabled = n === 0;
 
   const info = $('area-info');
@@ -468,11 +483,27 @@ function setStart(latlng) {
   state.startLatLng = latlng;
   if (state.startMarker) map.removeLayer(state.startMarker);
   state.startMarker = L.marker(latlng, { icon: START_ICON, keyboard: false })
-    .addTo(map).bindTooltip('Start / finish');
+    .addTo(map);
   $('pin-info').classList.remove('muted');
   $('pin-info').textContent =
     `${latlng.lat.toFixed(4)}, ${latlng.lng.toFixed(4)}`;
   $('pin-check').classList.remove('hidden');
+  syncClear();
+}
+
+function clearStart() {
+  state.startLatLng = null;
+  if (state.startMarker) map.removeLayer(state.startMarker);
+  state.startMarker = null;
+  $('pin-info').classList.add('muted');
+  $('pin-info').textContent = 'area centre';
+  $('pin-check').classList.add('hidden');
+  syncClear();
+}
+
+// Clear has work to do as long as there is a zone or a pin on the map.
+function syncClear() {
+  $('clear-zones').disabled = !state.regions.length && !state.startLatLng;
 }
 
 const TOOL_BUTTONS = {
@@ -761,39 +792,57 @@ function renderResult(res) {
     + `<span class="tile-value">${escapeHtml(String(value))}</span></div>`
   ).join('');
 
-  // One button. A single session is a plain .gpx; several are zipped, because
-  // one 80,000-point track is more than most nav apps will take.
+  // One button, one zip: the GPX file(s) - one per session, because one
+  // 80,000-point track is more than most nav apps will take - plus a PNG of
+  // the map and a README, so a single session gets the same package.
   const many = sessions.length > 1;
   $('download').textContent = many
     ? `Download ${sessions.length} sessions (.zip)`
-    : 'Download route (.gpx)';
-  // Only apps that *follow a track* are named. Organic Maps draws the track
-  // but routes point-to-point with no intermediate stops, so it plans its own
-  // way to the finish and ignores the route entirely.
-  $('download-note').textContent = many
-    ? 'Open a file in OsmAnd (Navigation, then Follow track), Locus Map or '
-      + 'Garmin and it drives every street in order.'
-    : 'Open it in OsmAnd (Navigation, then Follow track), Locus Map or '
-      + 'Garmin and it drives every street in order.';
+    : 'Download route (.zip)';
+  $('download-note').textContent =
+    'Open the downloaded file(s) in OsmAnd mobile app, for example.';
 }
 
 $('download').onclick = async () => {
   const res = state.result;
   if (!res) return;
   const button = $('download');
+  const label = button.textContent;
   button.disabled = true;
+  button.textContent = 'Preparing...';
   try {
-    const many = res.sessions.length > 1;
-    const blob = many
-      ? await gpxZip(res)
-      : new Blob([gpxDocument(res)], { type: 'application/gpx+xml' });
-    saveBlob(blob, many ? 'routile-sessions.zip' : 'routile-route.gpx');
+    // The picture is a bonus: if the tiles will not come, the zip still does.
+    const image = await snapshotImage().catch((err) => {
+      console.warn('map image skipped', err);
+      return null;
+    });
+    const blob = await gpxZip(res, { image });
+    saveBlob(blob, res.sessions.length > 1 ? 'routile-sessions.zip' : 'routile-route.zip');
   } catch (err) {
     showError(`Could not build the file: ${err.message}`);
   } finally {
     button.disabled = false;
+    button.textContent = label;
   }
 };
+
+/* The map as the route sees it: every session line, the zones and the start,
+   framed on the route rather than on wherever the screen is scrolled to. */
+function snapshotImage() {
+  const sessions = state.result.sessions.map((session, i) => ({
+    points: state.sessionPoints[i] || [],
+    label: `Session ${i + 1}`,
+    meta: `${Number(session.km).toFixed(1)} km · ${humanMinutes(session.minutes)}`,
+  }));
+  const st = state.result.stats;
+  return mapSnapshot({
+    sessions,
+    regions: state.regions,
+    start: state.startLatLng ? [state.startLatLng.lat, state.startLatLng.lng] : null,
+    palette: SESSION_COLORS.light,    // the picture is always the paper map
+    title: `${st.total_km} km · ${st.duration}`,
+  });
+}
 
 function saveBlob(blob, filename) {
   const url = URL.createObjectURL(blob);
@@ -974,6 +1023,7 @@ function buildLegend(sessions) {
       + '</span></button>';
   }).join('');
   box.classList.toggle('hidden', sessions.length === 0);
+  placeLegend();
 
   for (const item of box.querySelectorAll('.legend-item')) {
     const i = Number(item.dataset.session);
@@ -984,6 +1034,26 @@ function buildLegend(sessions) {
     item.addEventListener('click', () => pin(state.pinned === i ? null : i));
   }
 }
+
+/* The legend sits in the top right corner beside the tool bar while there is
+   room for both, and drops below the bar only when their boxes would actually
+   overlap - measured, not guessed from a breakpoint. */
+function placeLegend() {
+  const legend = $('legend');
+  if (legend.classList.contains('hidden')) return;
+  legend.style.top = '';
+  legend.style.maxHeight = '';
+  const bar = $('toolbar').getBoundingClientRect();
+  const box = legend.getBoundingClientRect();
+  const clear = 8;
+  if (box.left < bar.right + clear && box.right > bar.left - clear
+      && box.top < bar.bottom + clear) {
+    const top = bar.bottom - $('map').getBoundingClientRect().top + 10;
+    legend.style.top = `${top}px`;
+    legend.style.maxHeight = `calc(100% - ${top + 14}px)`;
+  }
+}
+new ResizeObserver(() => placeLegend()).observe($('map'));
 
 /* Two layers of the same highlight. Hovering previews a session; clicking pins
    it so it survives the pointer moving away, which is what you want while
@@ -1003,22 +1073,25 @@ function pin(index) {
   }
 }
 
+/* Highlighting a session leaves it exactly as drawn and takes every other
+   session off the map, so what is left is that one leg on its own. */
 function applyHighlight(index, { scroll = true } = {}) {
   state.routeLayers.forEach((line, i) => {
     if (!line) return;
-    const hot = i === index;
-    line.setStyle({
-      weight: hot ? ROUTE_WEIGHT_HOT : ROUTE_WEIGHT,
-      opacity: index === null || hot ? 0.85 : 0.22,
-    });
-    if (hot) line.bringToFront();
+    const hidden = index !== null && i !== index;
+    line.setStyle({ opacity: hidden ? 0 : 0.85 });
+    // A hidden line must not catch the pointer either, or brushing over where
+    // it was would swap the highlight to a session nobody can see.
+    const el = line.getElement();
+    if (el) el.style.pointerEvents = hidden ? 'none' : '';
+    if (i === index) line.bringToFront();
   });
 
   state.arrowsBySession.forEach((arrows, i) => {
     if (!arrows) return;
-    const dim = index !== null && i !== index;
+    const hidden = index !== null && i !== index;
     for (const marker of arrows) {
-      if (marker._icon) marker._icon.style.opacity = dim ? '0.2' : '1';
+      if (marker._icon) marker._icon.style.opacity = hidden ? '0' : '1';
     }
   });
 

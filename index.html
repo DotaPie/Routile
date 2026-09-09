@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Routile</title>
   <meta name="description" content="Draw an area on a map and get a route that drives every road inside it.">
-  <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2024%2024'%3E%3Crect%20width='24'%20height='24'%20rx='6'%20fill='%2335d29a'/%3E%3Cpath%20d='M5%2020H15A4%204%200%200%200%2015%2012H9A4%204%200%200%201%209%204H19'%20fill='none'%20stroke='%230b1a15'%20stroke-width='2.4'%20stroke-linecap='round'%20stroke-linejoin='round'/%3E%3C/svg%3E">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2024%2024'%3E%3Crect%20width='24'%20height='24'%20rx='6'%20fill='%2335d29a'/%3E%3Cpath%20d='M5.5%2020V3H12a4.5%204.5%200%200%201%200%209H9.5L17%2020'%20fill='none'%20stroke='%230b1a15'%20stroke-width='2.4'%20stroke-linecap='round'%20stroke-linejoin='round'/%3E%3Ccircle%20cx='17'%20cy='20'%20r='3.2'%20fill='%230b1a15'/%3E%3C/svg%3E">
 
   <!-- Theme is stamped before first paint, so a dark session never flashes white. -->
   <script>
@@ -29,14 +29,15 @@
   <aside id="panel">
     <header>
       <span class="brand">
-        <svg class="logo" viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M5 20H15A4 4 0 0 0 15 12H9A4 4 0 0 1 9 4H19"/>
-          <circle class="logo-dot" cx="5" cy="20" r="2.1"/>
-        </svg>
-        <h1>Routile</h1>
+        <!-- The mark is the R: one route line - stem, bowl, leg - ending at
+             its destination. The rest of the name is set in type after it. -->
+        <h1><svg class="logo" viewBox="3 0 18.5 24" role="img" aria-label="R">
+          <path d="M5.5 20V3H12a4.5 4.5 0 0 1 0 9H9.5L17 20"/>
+          <circle class="logo-dot" cx="17" cy="20" r="3"/>
+        </svg>outile</h1>
       </span>
       <button id="theme-toggle" class="icon-btn" type="button"
-              title="Switch between dark and light" aria-label="Switch between dark and light">
+              aria-label="Switch between dark and light">
         <svg class="icon-sun" viewBox="0 0 24 24" aria-hidden="true">
           <circle cx="12" cy="12" r="4.2"/>
           <path d="M12 2.6v2.2M12 19.2v2.2M2.6 12h2.2M19.2 12h2.2M5.4 5.4l1.6 1.6M17 17l1.6 1.6M18.6 5.4 17 7M7 17l-1.6 1.6"/>
@@ -109,45 +110,30 @@
 
   <main id="map">
     <div id="topbar">
-      <form id="search" class="card search" role="search">
-        <svg class="search-icon" viewBox="0 0 24 24" aria-hidden="true">
-          <circle cx="10.5" cy="10.5" r="6.5"/><path d="m15.4 15.4 4.1 4.1"/>
-        </svg>
-        <input id="search-input" type="text" autocomplete="off" spellcheck="false"
-               placeholder="Search a place" aria-label="Search for a place">
-        <button id="search-go" class="search-go" type="submit" title="Go to this place"
-                aria-label="Go to this place">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h13M13 6.5 18.5 12 13 17.5"/></svg>
-        </button>
-      </form>
-
       <div id="toolbar" class="card toolbar" role="group" aria-label="Map tools">
-        <button id="mode-pan" class="tool" title="Pan the map (or hold the middle or right mouse button anywhere)">
+        <button id="mode-pan" class="tool" aria-label="Pan the map">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 11V5.5a1.5 1.5 0 0 1 3 0V11m0 0V4.5a1.5 1.5 0 0 1 3 0V11m0 0V6.5a1.5 1.5 0 0 1 3 0V14a6 6 0 0 1-6 6H10a6 6 0 0 1-6-6v-1.5a1.5 1.5 0 0 1 3 0V13"/></svg>
           <span>Pan</span>
         </button>
 
         <span class="tool-sep" aria-hidden="true"></span>
 
-        <button id="mode-rect" class="tool active" title="Drag to draw a rectangle zone"
-                aria-label="Draw a rectangle">
+        <button id="mode-rect" class="tool active" aria-label="Draw a rectangle">
           <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="6" width="16" height="12" rx="1.5" stroke-dasharray="3 2.5"/></svg>
           <span>Rectangle</span>
         </button>
-        <button id="mode-circle" class="tool" title="Drag out from the centre to draw a circle zone"
-                aria-label="Draw a circle">
+        <button id="mode-circle" class="tool" aria-label="Draw a circle">
           <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="7.5" stroke-dasharray="3 2.5"/></svg>
           <span>Circle</span>
         </button>
-        <button id="mode-freehand" class="tool" title="Drag to draw any shape by hand, back to the ring to close it"
-                aria-label="Draw freehand">
+        <button id="mode-freehand" class="tool" aria-label="Draw freehand">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4.4c4.3 0 7.8 2.4 7.8 5.4s-3.5 5.4-7.8 5.4-7.8-2.4-7.8-5.4S7.7 4.4 12 4.4z"/><path d="M9.2 15c-.7 1.6-.5 3.4.9 4.6"/></svg>
           <span>Freehand</span>
         </button>
 
         <span class="tool-sep" aria-hidden="true"></span>
 
-        <button id="mode-pin" class="tool" title="Click the map to set where the route starts">
+        <button id="mode-pin" class="tool" aria-label="Set where the route starts">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s6.5-6.2 6.5-11a6.5 6.5 0 1 0-13 0C5.5 14.8 12 21 12 21z"/><circle cx="12" cy="10" r="2.4"/></svg>
           <span>Start</span>
           <svg id="pin-check" class="check hidden" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12.5l5 5L20 6.5"/></svg>
@@ -156,7 +142,7 @@
         <span class="tool-sep" aria-hidden="true"></span>
 
         <button id="clear-zones" class="tool danger" type="button" disabled
-                title="Remove every zone and the computed route" aria-label="Clear all zones">
+                aria-label="Clear the zones, the start and the route">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14M10 7V5.6A1.6 1.6 0 0 1 11.6 4h.8A1.6 1.6 0 0 1 14 5.6V7m-7.2 0 .8 11.2A2 2 0 0 0 9.6 20h4.8a2 2 0 0 0 2-1.8L17.2 7"/></svg>
           <span>Clear</span>
         </button>
@@ -164,6 +150,17 @@
     </div>
 
     <div id="legend" class="legend hidden" role="list" aria-label="Sessions"></div>
+
+    <form id="search" class="card search" role="search">
+      <svg class="search-icon" viewBox="0 0 24 24" aria-hidden="true">
+        <circle cx="10.5" cy="10.5" r="6.5"/><path d="m15.4 15.4 4.1 4.1"/>
+      </svg>
+      <input id="search-input" type="text" autocomplete="off" spellcheck="false"
+             placeholder="Search a place" aria-label="Search for a place">
+      <button id="search-go" class="search-go" type="submit" aria-label="Go to this place">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h13M13 6.5 18.5 12 13 17.5"/></svg>
+      </button>
+    </form>
   </main>
 </div>
 
