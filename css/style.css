@@ -87,12 +87,18 @@ html, body {
 .logo-dot { fill: currentColor; stroke: none; }
 
 /* --------------------------------------------------------- floating cards */
+/* One bar across the top of the map: the tools, then the place search. Its
+   width is left at max-content rather than clamped to the stage, so the script
+   can measure what the bar actually wants and squish or stack it (see
+   layoutOverlays) instead of letting it silently crush the search box. */
 #topbar {
   position: absolute;
   z-index: 500;
   top: 14px; left: 50%;
   transform: translateX(-50%);
-  max-width: calc(100% - 20px);
+  display: flex; align-items: center;
+  width: max-content;
+  padding: 4px;
 }
 .card {
   background: var(--glass);
@@ -103,14 +109,10 @@ html, body {
 }
 
 /* ------------------------------------------------------------ place search */
-/* Bottom left, clear of the tools above and the attribution to the right. */
+/* The right-hand end of the top bar, past the tools. */
 .search {
-  position: absolute;
-  z-index: 500;
-  left: 14px; bottom: 14px;
   display: flex; align-items: center; gap: 6px;
-  padding: 4px 4px 4px 10px;
-  max-width: calc(100% - 28px);
+  min-width: 0; padding-left: 8px;
 }
 .search-icon {
   width: 15px; height: 15px; flex: 0 0 auto;
@@ -118,8 +120,10 @@ html, body {
   fill: none; stroke: currentColor; stroke-width: 1.9;
   stroke-linecap: round; stroke-linejoin: round;
 }
+/* Fixed rather than flexible: a field that quietly shrinks would hide the fact
+   that the bar has run out of room, which is the signal the layout runs on. */
 .search input {
-  width: 200px; min-width: 0;
+  width: 190px; flex: 0 0 auto;
   font: inherit; font-size: 13px;
   color: var(--ink); background: transparent;
   border: 0; padding: 6px 0;
@@ -145,7 +149,7 @@ html, body {
 }
 
 /* ------------------------------------------------------- map tool bar */
-.toolbar { display: flex; gap: 3px; padding: 4px; }
+.toolbar { display: flex; gap: 3px; }
 .tool {
   position: relative;
   display: flex; align-items: center; gap: 6px;
@@ -355,42 +359,8 @@ html, body {
 #stage .search input { cursor: text; }
 
 /* ------------------------------------------------------ leaflet controls */
-/* The zoom buttons are dressed as the tool bar is - same glass card, same
-   icon buttons, same hover - so the map has one family of controls. The
-   selectors carry #stage to outrank Leaflet's own .leaflet-touch rules. */
-.leaflet-top .leaflet-control { margin-top: 14px; }
-.leaflet-left .leaflet-control { margin-left: 14px; }
-#stage .leaflet-control-zoom {
-  display: flex; flex-direction: column; gap: 3px;
-  padding: 4px;
-  background: var(--glass);
-  backdrop-filter: blur(8px);
-  border: 1px solid var(--line-2);
-  border-radius: 12px;
-  box-shadow: var(--shadow-lg);
-}
-#stage .leaflet-control-zoom a {
-  display: grid; place-items: center;
-  width: 34px; height: 34px;
-  color: var(--ink-2);
-  background: transparent; border: 0; border-radius: 8px;
-  transition: background 0.12s ease, color 0.12s ease;
-}
-#stage .leaflet-control-zoom a:hover { background: var(--hover); color: var(--ink); }
-#stage .leaflet-control-zoom a.leaflet-disabled { opacity: 0.38; }
-#stage .leaflet-control-zoom a.leaflet-disabled:hover { background: transparent; color: var(--ink-2); }
-#stage .leaflet-control-zoom a:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
-#stage .leaflet-control-zoom svg {
-  width: 17px; height: 17px;
-  fill: none; stroke: currentColor; stroke-width: 1.7;
-  stroke-linecap: round; stroke-linejoin: round;
-}
-#stage .leaflet-control-zoom-in { position: relative; }
-/* A hairline between the two, as between the tool groups. */
-#stage .leaflet-control-zoom-in::after {
-  content: ""; position: absolute; left: 6px; right: 6px; bottom: -2px;
-  height: 1px; background: var(--line-2);
-}
+/* No zoom buttons: the wheel, the keyboard and a pinch all zoom already, and
+   the top bar is the map's only set of controls. */
 .leaflet-control-attribution { background: var(--panel); color: var(--ink-2); }
 .leaflet-control-attribution a { color: var(--accent); }
 
@@ -463,13 +433,54 @@ html, body {
   font-variant-numeric: tabular-nums;
 }
 
-/* Once the map is too narrow for the labelled tools to clear the zoom buttons
-   on their left, the tools drop to icons only. */
-@media (max-width: 1100px) {
-  .tool span { display: none; }
-  .tool { padding: 8px 10px; }
-  .tool-sep { margin: 3px 0; }
+/* ------------------------------------------------- the bar giving way */
+/* Two steps, both switched on by layoutOverlays() once it has measured that
+   the bar no longer clears the session list beside it. First the tools drop
+   their labels and go to icons only, which is usually enough... */
+#stage.tools-tight .tool span { display: none; }
+#stage.tools-tight .tool { padding: 8px 10px; }
+#stage.tools-tight .tool-sep { margin: 3px 0; }
+
+/* ... and if even the icons would run into the sessions, the whole bar comes
+   out of the map and stacks below it, the sessions following underneath.
+   Floating it on top of a map this narrow would cover the very thing the bar
+   is there to help you use. */
+#stage.tools-docked #topbar {
+  position: static;
+  transform: none;
+  width: auto;
+  flex-wrap: wrap;         /* the search box drops to its own line if need be */
+  margin: 8px 10px 0;
+  padding: 4px;
+  background: var(--panel-2);
+  backdrop-filter: none;
+  box-shadow: none;
 }
+/* The tools hold their natural width rather than squeezing: an overflowing
+   row is the signal that they should be dropping their labels instead. */
+#stage.tools-docked #toolbar { flex: 0 0 auto; }
+#stage.tools-docked .search-sep { display: none; }
+#stage.tools-docked .search { flex: 1 1 180px; padding-left: 4px; }
+#stage.tools-docked .search input { width: auto; flex: 1 1 auto; }
+
+/* One scrolling row of chips rather than a column, so a dozen sessions cost
+   the same sliver of screen as two. */
+#stage.tools-docked .legend {
+  position: static;
+  top: auto; right: auto; width: auto;
+  margin: 8px 10px;
+  max-height: none;
+  display: flex; gap: 4px;
+  overflow-x: auto; overflow-y: hidden;
+  background: var(--panel-2);
+  backdrop-filter: none;
+  box-shadow: none;
+}
+#stage.tools-docked .legend-item { width: auto; flex: 0 0 auto; }
+#stage.tools-docked .legend-text { display: flex; align-items: baseline; gap: 7px; }
+#stage.tools-docked .legend-name,
+#stage.tools-docked .legend-meta { white-space: nowrap; }
+
 /* --------------------------------------------------------- touch devices */
 /* Set from script off (pointer: coarse), so it follows the input the device
    actually has rather than how wide its window happens to be.
@@ -491,12 +502,10 @@ html, body {
   background: var(--line-2); border-radius: 4px;
   border: 2px solid transparent; background-clip: content-box;
 }
-/* Pinch zooms, so two buttons doing the same job are just map you cannot see. */
-.is-touch .leaflet-control-zoom { display: none; }
 
-/* On a phone the panel stacks above the map, and the search box and the
-   session list come out of the map and sit below it - floating them on top
-   would cover the very thing they are there to help you use. */
+/* On a phone the panel stacks above the map. The bar and the sessions are
+   docked below it too, but that is the script's doing - the same breakpoint
+   read from layoutOverlays(), so the two layouts cannot disagree. */
 @media (max-width: 860px) {
   #shell { flex-direction: column; }
   #panel {
@@ -508,34 +517,4 @@ html, body {
   }
   #stage { flex: 1 1 auto; }
   #map { min-height: 46vh; }
-  #topbar { top: 10px; }
-  .leaflet-top .leaflet-control { margin-top: 10px; }
-  .leaflet-left .leaflet-control { margin-left: 10px; }
-
-  .search {
-    position: static;
-    margin: 8px 10px 0;
-    max-width: none;
-    background: var(--panel-2);
-    backdrop-filter: none;
-    box-shadow: none;
-  }
-  .search input { width: auto; flex: 1 1 auto; }
-
-  /* One scrolling row of chips rather than a column, so a dozen sessions cost
-     the same sliver of screen as two. */
-  .legend {
-    position: static;
-    top: auto; right: auto; width: auto;
-    margin: 8px 10px;
-    max-height: none;
-    display: flex; gap: 4px;
-    overflow-x: auto; overflow-y: hidden;
-    background: var(--panel-2);
-    backdrop-filter: none;
-    box-shadow: none;
-  }
-  .legend-item { width: auto; flex: 0 0 auto; }
-  .legend-text { display: flex; align-items: baseline; gap: 7px; }
-  .legend-name, .legend-meta { white-space: nowrap; }
 }

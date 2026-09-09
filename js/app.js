@@ -59,7 +59,9 @@ const state = {
 
 /* ------------------------------------------------------------------ map */
 // boxZoom off: Leaflet binds shift+drag to box zoom, which would fight
-// shift+drag drawing.
+// shift+drag drawing. zoomControl off for good: the wheel, the keyboard and a
+// pinch all zoom already, so two buttons for it would only be map you cannot
+// see.
 const map = L.map('map', { zoomControl: false, boxZoom: false })
   .setView([48.148, 17.107], 14);
 
@@ -69,17 +71,6 @@ const map = L.map('map', { zoomControl: false, boxZoom: false })
 const coarsePointer = window.matchMedia('(pointer: coarse)').matches;
 document.documentElement.classList.toggle('is-touch', coarsePointer);
 
-// Leaflet's zoom buttons, with the same line icons as the tool bar and no
-// hover titles: nothing on this map pops text up under the pointer. A touch
-// screen pinches instead, so there they would only cover the map.
-if (!coarsePointer) {
-  const zoomGlyph = (d) =>
-    `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${d}"/></svg>`;
-  L.control.zoom({
-    zoomInText: zoomGlyph('M12 5v14M5 12h14'), zoomInTitle: '',
-    zoomOutText: zoomGlyph('M5 12h14'), zoomOutTitle: '',
-  }).addTo(map);
-}
 // The default prefix carries a title tooltip; this one is the same credit without it.
 map.attributionControl.setPrefix('<a href="https://leafletjs.com">Leaflet</a>');
 
@@ -126,12 +117,12 @@ state.arrowLayer = L.layerGroup().addTo(map);
 state.pointLayer = L.layerGroup().addTo(map);
 map.on('moveend zoomend', () => refreshDetail());
 
-// The map shares the stage with the search box and the session list, and on a
-// phone those take real height from it. Leaflet has to be told when that
-// happens or it keeps drawing for the size it had.
+// The map shares the stage with the top bar and the session list, and once
+// those dock they take real height from it. Laid out first, then Leaflet is
+// told - otherwise it keeps drawing for the size it had.
 new ResizeObserver(() => {
+  layoutOverlays();
   map.invalidateSize({ animate: false });
-  placeLegend();
 }).observe($('stage'));
 
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -1036,7 +1027,7 @@ function buildLegend(sessions) {
       + '</span></button>';
   }).join('');
   box.classList.toggle('hidden', sessions.length === 0);
-  placeLegend();
+  layoutOverlays();
 
   for (const item of box.querySelectorAll('.legend-item')) {
     const i = Number(item.dataset.session);
@@ -1048,25 +1039,55 @@ function buildLegend(sessions) {
   }
 }
 
-/* The legend sits in the top right corner beside the tool bar while there is
-   room for both, and drops below the bar only when their boxes would actually
-   overlap - measured, not guessed from a breakpoint. */
-function placeLegend() {
-  const legend = $('legend');
-  if (legend.classList.contains('hidden')) return;
-  legend.style.top = '';
-  legend.style.maxHeight = '';
-  // Below the map on a phone, where there is nothing to dodge.
-  if (getComputedStyle(legend).position !== 'absolute') return;
-  const bar = $('toolbar').getBoundingClientRect();
-  const box = legend.getBoundingClientRect();
-  const clear = 8;
-  if (box.left < bar.right + clear && box.right > bar.left - clear
-      && box.top < bar.bottom + clear) {
-    const top = bar.bottom - $('stage').getBoundingClientRect().top + 10;
-    legend.style.top = `${top}px`;
-    legend.style.maxHeight = `calc(100% - ${top + 14}px)`;
+/* The top bar floats centred over the map with the session list in the corner
+   beside it, and gives way in two steps as the window narrows: first the tools
+   drop their labels, then - if even the icons would run into the sessions -
+   the whole bar, search box and all, comes out of the map and stacks below it
+   with the sessions underneath.
+
+   Measured rather than guessed from a breakpoint, because how much room the
+   bar needs depends on its labels and how much is left depends on whether
+   there are any sessions to list at all. Each step is decided by trying it:
+   the classes come off, the bar is measured at its natural width (see the
+   max-content in the stylesheet), and a step is added only while it still
+   does not fit. */
+const phoneLayout = window.matchMedia('(max-width: 860px)');
+phoneLayout.addEventListener('change', () => layoutOverlays());
+
+function layoutOverlays() {
+  const stage = $('stage');
+  stage.classList.remove('tools-tight', 'tools-docked');
+  // A phone stacks the panel above the map and everything else below it, so
+  // there is nothing left over the map to make room in.
+  if (phoneLayout.matches) {
+    stage.classList.add('tools-docked');
+  } else {
+    if (barIsCrowded()) stage.classList.add('tools-tight');
+    if (barIsCrowded()) stage.classList.add('tools-docked');
   }
+  // Docked, the bar has the width of the stage and the search box wraps to a
+  // line of its own - but the tools still give up their labels rather than run
+  // off the end of theirs.
+  if (toolsOverflow()) stage.classList.add('tools-tight');
+}
+
+/* Does the bar, at the width it currently has, still clear both edges of the
+   stage and the session list on its right? */
+function barIsCrowded() {
+  const stage = $('stage').getBoundingClientRect();
+  const bar = $('topbar').getBoundingClientRect();
+  const clear = 10;
+  if (bar.width > stage.width - 2 * clear) return true;
+  const legend = $('legend');
+  if (legend.classList.contains('hidden')) return false;
+  return bar.right + clear > legend.getBoundingClientRect().left;
+}
+
+/* Only ever true of a docked bar: floating, it is sized to its own content and
+   the tools cannot overflow it. */
+function toolsOverflow() {
+  const bar = $('topbar');
+  return bar.scrollWidth > bar.clientWidth;
 }
 
 /* Two layers of the same highlight, both driven from the legend alone.

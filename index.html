@@ -99,8 +99,8 @@
   <main id="stage">
     <div id="map"></div>
 
-    <div id="topbar">
-      <div id="toolbar" class="card toolbar" role="group" aria-label="Map tools">
+    <div id="topbar" class="card">
+      <div id="toolbar" class="toolbar" role="group" aria-label="Map tools">
         <button id="mode-pan" class="tool" aria-label="Pan the map">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 11V5.5a1.5 1.5 0 0 1 3 0V11m0 0V4.5a1.5 1.5 0 0 1 3 0V11m0 0V6.5a1.5 1.5 0 0 1 3 0V14a6 6 0 0 1-6 6H10a6 6 0 0 1-6-6v-1.5a1.5 1.5 0 0 1 3 0V13"/></svg>
           <span>Pan</span>
@@ -136,18 +136,20 @@
           <span>Clear</span>
         </button>
       </div>
-    </div>
 
-    <form id="search" class="card search" role="search">
-      <svg class="search-icon" viewBox="0 0 24 24" aria-hidden="true">
-        <circle cx="10.5" cy="10.5" r="6.5"/><path d="m15.4 15.4 4.1 4.1"/>
-      </svg>
-      <input id="search-input" type="text" autocomplete="off" spellcheck="false"
-             placeholder="Search a place" aria-label="Search for a place">
-      <button id="search-go" class="search-go" type="submit" aria-label="Go to this place">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h13M13 6.5 18.5 12 13 17.5"/></svg>
-      </button>
-    </form>
+      <span class="tool-sep search-sep" aria-hidden="true"></span>
+
+      <form id="search" class="search" role="search">
+        <svg class="search-icon" viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="10.5" cy="10.5" r="6.5"/><path d="m15.4 15.4 4.1 4.1"/>
+        </svg>
+        <input id="search-input" type="text" autocomplete="off" spellcheck="false"
+               placeholder="Search a place" aria-label="Search for a place">
+        <button id="search-go" class="search-go" type="submit" aria-label="Go to this place">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h13M13 6.5 18.5 12 13 17.5"/></svg>
+        </button>
+      </form>
+    </div>
 
     <div id="legend" class="legend hidden" role="list" aria-label="Sessions"></div>
   </main>
