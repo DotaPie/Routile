@@ -1,13 +1,19 @@
-/* The area to cover: one drawn shape - a rectangle, a circle or a freehand loop.
+/* The area to cover: one or more drawn zones - rectangles, circles, freehand
+   loops, in any mix.
 
    Two things come apart here and keeping them apart is the point:
 
-   * the **shape** decides which roads must be driven;
-   * the **bounding box of that shape** decides what to download.
+   * the **zones** decide which roads must be driven;
+   * the **bounding box around all of them** decides what to download.
 
    Draw a ring road as a circle and the roads outside it are downloaded
    (deadheading is allowed to leave the area, as a human would) but never
-   required. */
+   required.
+
+   Several zones merge into one job rather than several: a road is required if
+   it lies in *any* zone, and the single tour that comes out covers the lot.
+   Deadheading between zones is what stitches them together, which is exactly
+   what driving from one neighbourhood to the next looks like. */
 
 import { EARTH_R, deg, rad, representativePoint, ringBounds, sphericalAreaM2 } from './geo.js';
 
@@ -137,6 +143,22 @@ function polygonShape(data) {
   return { kind: 'polygon', points };
 }
 
+/* Several zones as one area. Nested multis are flattened, so a payload built
+   by appending to an existing one cannot grow a tree. */
+function multiShape(data) {
+  const raw = data.shapes || data.parts || [];
+  if (!Array.isArray(raw) || raw.length === 0) throw new AreaError('no zones drawn yet');
+  const parts = [];
+  for (const item of raw) {
+    const part = parseShape(item);
+    if (part.kind === 'multi') parts.push(...part.parts);
+    else parts.push(part);
+  }
+  // One zone is not a multi: it keeps the plain shape's cache key, so drawing a
+  // second zone and undoing it does not force a recompute of the first.
+  return parts.length === 1 ? parts[0] : { kind: 'multi', parts };
+}
+
 /* A metric circle as a lat/lon ring.
 
    Longitude degrees shrink with latitude, so a circle of fixed radius is an
@@ -154,39 +176,67 @@ function circleRing(lon, lat, radiusM) {
   return ring;
 }
 
+/* One zone as a ring of [lon, lat]. */
+function ringOfShape(shape) {
+  if (shape.kind === 'rect') {
+    return new BBox(shape.left, shape.bottom, shape.right, shape.top).ring();
+  }
+  if (shape.kind === 'circle') return circleRing(shape.lon, shape.lat, shape.radius);
+  return shape.points;
+}
+
+function parseShape(data) {
+  if (!data || typeof data !== 'object') throw new AreaError('nothing drawn yet');
+  const kind = String(data.type || data.kind || 'rect').toLowerCase();
+  if (kind === 'rect' || kind === 'rectangle') return rectShape(data);
+  if (kind === 'circle') return circleShape(data);
+  if (kind === 'polygon' || kind === 'freehand') return polygonShape(data);
+  if (kind === 'multi') return multiShape(data);
+  throw new AreaError(`unknown shape type '${kind}'`);
+}
+
 export class Area {
   constructor(shape) {
     this.shape = shape;
     this.kind = shape.kind;
-    if (shape.kind === 'rect') {
-      this.ring = new BBox(shape.left, shape.bottom, shape.right, shape.top).ring();
-    } else if (shape.kind === 'circle') {
-      this.ring = circleRing(shape.lon, shape.lat, shape.radius);
-    } else {
-      this.ring = shape.points;
-    }
-    const [l, b, r, t] = ringBounds(this.ring);
+    this.parts = shape.kind === 'multi' ? shape.parts : [shape];
+    this.rings = this.parts.map(ringOfShape);
+    this.ring = this.rings[0];    // single-zone callers still read this
+    const [l, b, r, t] = ringBounds(this.rings.flat());
     this.bounds = new BBox(l, b, r, t);   // what to download, not what to cover
   }
 
-  /* From the UI's payload: {type: 'rect' | 'circle' | 'freehand', ...}. */
+  /* From the UI's payload: {type: 'rect' | 'circle' | 'freehand' | 'multi'}. */
   static fromShape(data) {
-    if (!data || typeof data !== 'object') throw new AreaError('nothing drawn yet');
-    const kind = String(data.type || 'rect').toLowerCase();
-    if (kind === 'rect' || kind === 'rectangle') return new Area(rectShape(data));
-    if (kind === 'circle') return new Area(circleShape(data));
-    if (kind === 'polygon' || kind === 'freehand') return new Area(polygonShape(data));
-    throw new AreaError(`unknown shape type '${kind}'`);
+    return new Area(parseShape(data));
   }
 
-  /* A point inside the shape, for the default start. */
+  /* A point inside the area, for the default start. With several zones it is
+     the biggest one that gets the pin - the drive spends most of its time
+     there, so starting there beats starting in whichever was drawn first. */
   get center() {
+    if (this.kind === 'multi') {
+      let best = null;
+      for (const part of this.parts) {
+        const a = new Area(part);
+        const km2 = a.areaKm2();
+        if (!best || km2 > best.km2) best = { km2, center: a.center };
+      }
+      return best.center;
+    }
     if (this.kind === 'rect') return this.bounds.center;
     if (this.kind === 'circle') return [this.shape.lon, this.shape.lat];
     return representativePoint(this.ring);
   }
 
-  areaKm2() { return sphericalAreaM2(this.ring) / 1e6; }
+  /* Zones are summed, so overlapping ones are counted twice. Overlap is a
+     drawing mistake rather than a use case, and the figure only drives the
+     fetch buffer and the panel readout - never which roads are required. */
+  areaKm2() {
+    let total = 0;
+    for (const ring of this.rings) total += sphericalAreaM2(ring);
+    return total / 1e6;
+  }
 
   validate(maxAreaKm2) {
     // The box is checked for sane coordinates only, never against the cap: a
@@ -200,22 +250,31 @@ export class Area {
     }
   }
 
-  /* A stable text form, for cache keys. */
+  /* A stable text form, for cache keys. Zones are sorted, so drawing the same
+     two zones in the other order hits the same cached result. */
   key(decimals = 6) {
-    const s = this.shape;
-    if (s.kind === 'rect') return ['rect', s.left, s.bottom, s.right, s.top].map(fix(decimals)).join(':');
-    if (s.kind === 'circle') return ['circle', s.lon, s.lat, s.radius].map(fix(decimals)).join(':');
-    return 'polygon:' + s.points.map(([x, y]) => `${x.toFixed(decimals)},${y.toFixed(decimals)}`).join(';');
+    return this.parts.map((s) => shapeKey(s, decimals)).sort().join('+');
   }
 
   toJSON() {
-    const s = this.shape;
-    let shape;
-    if (s.kind === 'rect') shape = { type: 'rect', left: s.left, bottom: s.bottom, right: s.right, top: s.top };
-    else if (s.kind === 'circle') shape = { type: 'circle', lon: s.lon, lat: s.lat, radius_m: Math.round(s.radius * 10) / 10 };
-    else shape = { type: 'polygon', points: s.points.map(([x, y]) => [y, x]) };
-    return { shape, area_km2: Math.round(this.areaKm2() * 1000) / 1000 };
+    const shapes = this.parts.map(shapeJSON);
+    return {
+      shape: shapes.length === 1 ? shapes[0] : { type: 'multi', shapes },
+      area_km2: Math.round(this.areaKm2() * 1000) / 1000,
+    };
   }
+}
+
+function shapeKey(s, decimals) {
+  if (s.kind === 'rect') return ['rect', s.left, s.bottom, s.right, s.top].map(fix(decimals)).join(':');
+  if (s.kind === 'circle') return ['circle', s.lon, s.lat, s.radius].map(fix(decimals)).join(':');
+  return 'polygon:' + s.points.map(([x, y]) => `${x.toFixed(decimals)},${y.toFixed(decimals)}`).join(';');
+}
+
+function shapeJSON(s) {
+  if (s.kind === 'rect') return { type: 'rect', left: s.left, bottom: s.bottom, right: s.right, top: s.top };
+  if (s.kind === 'circle') return { type: 'circle', lon: s.lon, lat: s.lat, radius_m: Math.round(s.radius * 10) / 10 };
+  return { type: 'polygon', points: s.points.map(([x, y]) => [y, x]) };
 }
 
 const fix = (decimals) => (v) => (typeof v === 'number' ? v.toFixed(decimals) : String(v));

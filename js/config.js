@@ -11,10 +11,8 @@ export const ALGO_VERSION = '6';
 // No product-level cap: draw whatever you like. This ceiling is deliberately far
 // larger than any country-sized rectangle anyone would drag by hand, and exists
 // only so a nonsense request (a whole hemisphere) fails with a clear message
-// rather than grinding away at Overpass. Anything past AREA_WARN_KM2 is warned
-// about but allowed.
+// rather than grinding away at Overpass.
 export const AREA_CAP_KM2 = 50_000;
-export const AREA_WARN_KM2 = 20;
 
 // ---------------------------------------------------------------- OSM fetching
 // Fetch beyond the drawn shape so deadhead legs may leave it (what a human

@@ -1,21 +1,62 @@
-:root {
+/* Two themes, one set of tokens. Dark is the default and light is the opt-in,
+   so every colour below is a variable - nothing downstream hardcodes a shade. */
+:root,
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0f1316;
+  --panel: #171c21;
+  --panel-2: #1d242a;
+  --ink: #e8eef2;
+  --ink-2: #a7b4bd;
+  --ink-3: #78868f;
+  --line: #262e35;
+  --line-2: #333d45;
+  --hover: #232b32;
+  --field-bg: #11161a;
+  --accent: #35d29a;
+  --accent-2: #46e0aa;
+  --accent-soft: #14312a;
+  --accent-line: #1e4a3d;
+  --on-accent: #06120e;
+  --focus: rgba(53, 210, 154, 0.26);
+  --good: #35d29a;
+  --bad: #ff7368;
+  --bad-soft: #2c1917;
+  --bad-line: #4d2724;
+  --map-bg: #0b0f12;
+  --glass: rgba(23, 28, 33, 0.93);
+  --pin-ring: #0b1a15;
+  --r: 10px;
+  --r-sm: 7px;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.35), 0 4px 12px rgba(0, 0, 0, 0.30);
+  --shadow-lg: 0 2px 6px rgba(0, 0, 0, 0.42), 0 12px 28px rgba(0, 0, 0, 0.38);
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
   --bg: #f4f6f8;
   --panel: #ffffff;
+  --panel-2: #f7f9fb;
   --ink: #10151c;
   --ink-2: #48525f;
   --ink-3: #7b8694;
   --line: #e6eaef;
   --line-2: #d6dce4;
+  --hover: #eef1f5;
+  --field-bg: #ffffff;
   --accent: #2563eb;
+  --accent-2: #1d4fd7;
   --accent-soft: #eff4ff;
+  --accent-line: #dbe6fe;
+  --on-accent: #ffffff;
+  --focus: rgba(37, 99, 235, 0.16);
   --good: #0f9960;
-  --warn-soft: #fff8e6;
-  --warn-line: #f0dfb5;
-  --warn-ink: #7a5308;
   --bad: #d33d33;
   --bad-soft: #fdefee;
-  --r: 10px;
-  --r-sm: 7px;
+  --bad-line: #f6cdc9;
+  --map-bg: #e7ebef;
+  --glass: rgba(255, 255, 255, 0.94);
+  --pin-ring: #ffffff;
   --shadow: 0 1px 2px rgba(16, 21, 28, 0.05), 0 4px 12px rgba(16, 21, 28, 0.06);
   --shadow-lg: 0 2px 6px rgba(16, 21, 28, 0.10), 0 12px 28px rgba(16, 21, 28, 0.12);
 }
@@ -44,29 +85,101 @@ html, body {
 
 #map { flex: 1; min-width: 0; position: relative; }
 
-header h1 {
-  margin: 0 0 18px;
-  font-size: 20px;
-  font-weight: 640;
-  letter-spacing: -0.02em;
+/* ------------------------------------------------------------------ brand */
+#panel > header {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  margin-bottom: 18px;
 }
+.brand { display: flex; align-items: center; gap: 9px; min-width: 0; }
+.brand h1 {
+  margin: 0;
+  font-family: "Space Grotesk", "Segoe UI", system-ui, sans-serif;
+  font-size: 22px; font-weight: 600; letter-spacing: -0.015em;
+}
+.logo {
+  width: 26px; height: 26px; flex: 0 0 auto;
+  color: var(--accent);
+  fill: none; stroke: currentColor; stroke-width: 2.1;
+  stroke-linecap: round; stroke-linejoin: round;
+}
+.logo-dot { fill: currentColor; stroke: none; }
 
-/* ------------------------------------------------------- map tool bar */
-.toolbar {
+.icon-btn {
+  flex: 0 0 auto;
+  display: grid; place-items: center;
+  width: 32px; height: 32px; padding: 0;
+  color: var(--ink-2); background: transparent;
+  border: 1px solid var(--line-2); border-radius: 9px;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.icon-btn:hover { background: var(--hover); color: var(--ink); }
+.icon-btn svg {
+  width: 16px; height: 16px;
+  fill: none; stroke: currentColor; stroke-width: 1.8;
+  stroke-linecap: round; stroke-linejoin: round;
+}
+/* Show the theme you would switch to, not the one you are in. */
+:root[data-theme="dark"] .icon-moon,
+:root[data-theme="light"] .icon-sun { display: none; }
+
+/* --------------------------------------------------------- floating cards */
+#topbar {
   position: absolute;
   z-index: 500;
-  top: 14px;
-  left: 50%;
+  top: 14px; left: 50%;
   transform: translateX(-50%);
-  display: flex;
-  gap: 3px;
-  padding: 4px;
-  background: rgba(255, 255, 255, 0.94);
+  display: flex; align-items: flex-start; gap: 8px;
+  max-width: calc(100% - 20px);
+}
+.card {
+  background: var(--glass);
   backdrop-filter: blur(8px);
   border: 1px solid var(--line-2);
   border-radius: 12px;
   box-shadow: var(--shadow-lg);
 }
+
+/* ------------------------------------------------------------ place search */
+.search {
+  display: flex; align-items: center; gap: 6px;
+  padding: 4px 4px 4px 10px;
+  min-width: 0;
+}
+.search-icon {
+  width: 15px; height: 15px; flex: 0 0 auto;
+  color: var(--ink-3);
+  fill: none; stroke: currentColor; stroke-width: 1.9;
+  stroke-linecap: round; stroke-linejoin: round;
+}
+.search input {
+  width: 168px; min-width: 0;
+  font: inherit; font-size: 13px;
+  color: var(--ink); background: transparent;
+  border: 0; padding: 6px 0;
+}
+.search input::placeholder { color: var(--ink-3); }
+.search input:focus { outline: 0; }
+.search.searching .search-icon { animation: pulse 1s ease-in-out infinite; }
+.search.missed input { color: var(--bad); }
+@keyframes pulse { 50% { opacity: 0.3; } }
+.search-go {
+  flex: 0 0 auto;
+  display: grid; place-items: center;
+  width: 30px; height: 30px; padding: 0;
+  color: var(--ink-2); background: transparent;
+  border: 0; border-radius: 8px; cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.search-go:hover { background: var(--hover); color: var(--ink); }
+.search-go svg {
+  width: 16px; height: 16px;
+  fill: none; stroke: currentColor; stroke-width: 1.9;
+  stroke-linecap: round; stroke-linejoin: round;
+}
+
+/* ------------------------------------------------------- map tool bar */
+.toolbar { display: flex; gap: 3px; padding: 4px; }
 .tool {
   position: relative;
   display: flex; align-items: center; gap: 6px;
@@ -77,15 +190,15 @@ header h1 {
   cursor: pointer;
   transition: background 0.12s ease, color 0.12s ease;
 }
-.tool:hover { background: #eef1f5; color: var(--ink); }
-/* Hairline between the pan tool, the three shape tools and the start pin, so
-   five buttons still read as three groups. */
+.tool:hover { background: var(--hover); color: var(--ink); }
+/* Hairlines between pan, the shape tools, the start pin and clear, so six
+   buttons still read as four groups. */
 .tool-sep {
   flex: 0 0 auto; align-self: stretch;
   width: 1px; margin: 3px 2px;
   background: var(--line-2);
 }
-.tool.active { background: var(--accent); color: #fff; }
+.tool.active { background: var(--accent); color: var(--on-accent); }
 .tool svg {
   width: 17px; height: 17px; flex: 0 0 auto;
   fill: none; stroke: currentColor; stroke-width: 1.7;
@@ -95,29 +208,32 @@ header h1 {
   width: 14px; height: 14px; stroke-width: 3;
   color: var(--good); margin-left: 1px;
 }
-.tool.active .check { color: #b6f5d5; }
+.tool.active .check { color: var(--on-accent); opacity: 0.75; }
+.tool.danger:hover:not(:disabled) { background: var(--bad-soft); color: var(--bad); }
+.tool:disabled { opacity: 0.38; cursor: default; }
+.tool:disabled:hover { background: transparent; color: var(--ink-2); }
 
 /* ------------------------------------------------------------- start pin */
 .start-pin svg {
   width: 60px; height: 60px;
   fill: var(--accent);
-  stroke: #fff; stroke-width: 1.6;
+  stroke: var(--pin-ring); stroke-width: 1.6;
   stroke-linejoin: round;
-  filter: drop-shadow(0 2px 4px rgba(16, 21, 28, 0.35));
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.45));
 }
-.start-pin circle { fill: #fff; stroke: none; }
+.start-pin circle { fill: var(--pin-ring); stroke: none; }
 
 /* ---------------------------------------------------------------- tiles */
 .tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .tiles + .tiles { margin-top: 8px; }
 .tile {
   padding: 9px 11px;
-  background: #f7f9fb;
+  background: var(--panel-2);
   border: 1px solid var(--line);
   border-radius: var(--r-sm);
   min-width: 0;
 }
-.tile.accent { background: var(--accent-soft); border-color: #dbe6fe; }
+.tile.accent { background: var(--accent-soft); border-color: var(--accent-line); }
 .tile-label {
   display: block; font-size: 10.5px; font-weight: 600;
   text-transform: uppercase; letter-spacing: 0.05em; color: var(--ink-3);
@@ -147,12 +263,12 @@ header h1 {
   display: block;
   width: 100%; margin-top: 22px; padding: 12px;
   font: inherit; font-size: 15px; font-weight: 580;
-  color: #fff; background: var(--accent);
+  color: var(--on-accent); background: var(--accent);
   border: 0; border-radius: var(--r);
   cursor: pointer; box-shadow: var(--shadow);
   transition: background 0.12s ease, opacity 0.12s ease;
 }
-.primary:hover:not(:disabled) { background: #1d4fd7; }
+.primary:hover:not(:disabled) { background: var(--accent-2); }
 .primary:disabled { opacity: 0.4; cursor: not-allowed; box-shadow: none; }
 
 /* --------------------------------------------------------------- inputs */
@@ -164,23 +280,23 @@ header h1 {
 }
 .field input {
   width: 100%; font: inherit; padding: 8px 10px;
-  color: var(--ink); background: #fff;
+  color: var(--ink); background: var(--field-bg);
   border: 1px solid var(--line-2); border-radius: var(--r-sm);
   font-variant-numeric: tabular-nums;
 }
 .field input:focus {
   outline: 0; border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.14);
+  box-shadow: 0 0 0 3px var(--focus);
 }
 .field input.invalid {
-  border-color: var(--bad); box-shadow: 0 0 0 3px rgba(211, 61, 51, 0.12);
+  border-color: var(--bad); box-shadow: 0 0 0 3px var(--bad-soft);
 }
 
 /* ---------------------------------------------------------- segmented */
 .segmented {
   display: grid; grid-template-columns: 1fr 1fr; gap: 3px;
   padding: 3px;
-  background: #eef1f5; border-radius: var(--r-sm);
+  background: var(--hover); border-radius: var(--r-sm);
 }
 .segmented label { display: block; position: relative; cursor: pointer; }
 .segmented input { position: absolute; opacity: 0; pointer-events: none; }
@@ -192,12 +308,10 @@ header h1 {
 }
 .segmented label:hover span { color: var(--ink); }
 .segmented input:checked + span {
-  background: #fff; color: var(--ink); font-weight: 580;
-  box-shadow: 0 1px 2px rgba(16, 21, 28, 0.10);
+  background: var(--panel); color: var(--ink); font-weight: 580;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18);
 }
-.segmented input:focus-visible + span {
-  box-shadow: 0 0 0 2px var(--accent);
-}
+.segmented input:focus-visible + span { box-shadow: 0 0 0 2px var(--accent); }
 
 /* --------------------------------------------------------------- switch */
 .switch {
@@ -208,32 +322,29 @@ header h1 {
 .switch .track {
   flex: 0 0 auto; position: relative;
   width: 36px; height: 21px; border-radius: 11px;
-  background: #c8d0da; transition: background 0.16s ease;
+  background: var(--line-2); transition: background 0.16s ease;
 }
 .switch .track::after {
   content: ""; position: absolute; top: 3px; left: 3px;
   width: 15px; height: 15px; border-radius: 50%; background: #fff;
   transition: transform 0.16s ease;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.22);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
 }
 .switch input:checked + .track { background: var(--accent); }
 .switch input:checked + .track::after { transform: translateX(15px); }
-.switch input:focus-visible + .track {
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.2);
-}
+.switch input:focus-visible + .track { box-shadow: 0 0 0 3px var(--focus); }
 .switch-label { font-size: 13.5px; font-weight: 520; }
 
 /* -------------------------------------------------------------- notices */
-.warn, .error {
-  padding: 10px 12px; border-radius: var(--r-sm);
-  font-size: 12.5px; border: 1px solid;
+.error {
+  margin-top: 12px; padding: 10px 12px; border-radius: var(--r-sm);
+  font-size: 12.5px;
+  background: var(--bad-soft); border: 1px solid var(--bad-line); color: var(--bad);
 }
-.warn { margin-top: 10px; background: var(--warn-soft); border-color: var(--warn-line); color: var(--warn-ink); }
-.error { margin-top: 12px; background: var(--bad-soft); border-color: #f6cdc9; color: var(--bad); }
 
 /* ------------------------------------------------------------- progress */
 .progress { margin-top: 14px; }
-.bar { height: 5px; border-radius: 3px; background: #e6eaef; overflow: hidden; }
+.bar { height: 5px; border-radius: 3px; background: var(--line); overflow: hidden; }
 .fill {
   height: 100%; width: 0; border-radius: 3px;
   background: var(--accent); transition: width 0.3s ease;
@@ -244,25 +355,46 @@ header h1 {
 
 .hidden { display: none !important; }
 
-.leaflet-container { background: #e7ebef; }
+.leaflet-container { background: var(--map-bg); }
 
 /* Leaflet gives every drawn path `cursor: pointer`, which would say "click me"
-   right where you are trying to start the next shape. While a draw tool is
+   right where you are trying to start the next zone. While a draw tool is
    active the whole map keeps the drawing cursor, paths included. */
 #map.drawing,
 #map.drawing .leaflet-container,
 #map.drawing .leaflet-interactive { cursor: crosshair; }
+/* Placing the start carries the pin itself, tip on the hotspot, so it is
+   obvious that the next click drops it rather than selects something. */
 #map.pinning,
 #map.pinning .leaflet-container,
-#map.pinning .leaflet-interactive { cursor: pointer; }
+#map.pinning .leaflet-interactive {
+  cursor: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='34'%20height='34'%20viewBox='0%200%2024%2024'%3E%3Cpath%20d='M12%2021s6.5-6.2%206.5-11a6.5%206.5%200%201%200-13%200C5.5%2014.8%2012%2021%2012%2021z'%20fill='%2335d29a'%20stroke='%230b1a15'%20stroke-width='1.5'/%3E%3Ccircle%20cx='12'%20cy='10'%20r='2.6'%20fill='%230b1a15'/%3E%3C/svg%3E") 17 30, crosshair;
+}
+:root[data-theme="light"] #map.pinning,
+:root[data-theme="light"] #map.pinning .leaflet-container,
+:root[data-theme="light"] #map.pinning .leaflet-interactive {
+  cursor: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='34'%20height='34'%20viewBox='0%200%2024%2024'%3E%3Cpath%20d='M12%2021s6.5-6.2%206.5-11a6.5%206.5%200%201%200-13%200C5.5%2014.8%2012%2021%2012%2021z'%20fill='%232563eb'%20stroke='%23ffffff'%20stroke-width='1.5'/%3E%3Ccircle%20cx='12'%20cy='10'%20r='2.6'%20fill='%23ffffff'/%3E%3C/svg%3E") 17 30, crosshair;
+}
+/* Held middle or right mouse button: a temporary grab, whatever tool is armed. */
+#map.grabbing,
+#map.grabbing .leaflet-container,
+#map.grabbing .leaflet-interactive { cursor: grabbing; }
 /* ... but the panels floating on top of the map are still controls. */
-#map .toolbar, #map .legend { cursor: default; }
-#map .tool, #map .legend-item { cursor: pointer; }
+#map #topbar, #map .legend { cursor: default; }
+#map .tool, #map .legend-item, #map .search-go { cursor: pointer; }
+#map .search input { cursor: text; }
 
-/* Keep Leaflet's own controls clear of the centred toolbar. */
+/* Keep Leaflet's own controls clear of the centred toolbar, and in theme. */
 .leaflet-top.leaflet-left { margin-top: 2px; }
+:root[data-theme="dark"] .leaflet-bar a,
+:root[data-theme="dark"] .leaflet-control-attribution {
+  background: var(--panel); color: var(--ink-2); border-color: var(--line);
+}
+:root[data-theme="dark"] .leaflet-bar a:hover { background: var(--hover); color: var(--ink); }
+:root[data-theme="dark"] .leaflet-bar a.leaflet-disabled { background: var(--panel-2); color: var(--ink-3); }
+:root[data-theme="dark"] .leaflet-control-attribution a { color: var(--accent); }
 
-/* -------------------------------------------------------------- route arrows */
+/* -------------------------------------------------------- route arrows */
 /* Leaflet owns the marker element's transform for positioning, so the rotation
    has to go on something inside it. */
 .route-arrow i {
@@ -274,10 +406,10 @@ header h1 {
   width: 14px; height: 14px;
   fill: none; stroke: currentColor; stroke-width: 2.2;
   stroke-linecap: round; stroke-linejoin: round;
-  filter: drop-shadow(0 0 1.5px rgba(255, 255, 255, 0.95));
+  filter: drop-shadow(0 0 1.5px var(--map-bg));
 }
 
-/* ------------------------------------------------------------ session legend */
+/* ------------------------------------------------------ session legend */
 .legend {
   position: absolute;
   z-index: 500;
@@ -288,7 +420,7 @@ header h1 {
   padding: 4px;
   overflow-y: auto;
   overscroll-behavior: contain;
-  background: rgba(255, 255, 255, 0.94);
+  background: var(--glass);
   backdrop-filter: blur(8px);
   border: 1px solid var(--line-2);
   border-radius: 12px;
@@ -302,7 +434,7 @@ header h1 {
   background: transparent; border: 0; border-radius: 8px;
   transition: background 0.12s ease;
 }
-.legend-item:hover, .legend-item.active { background: #eef1f5; }
+.legend-item:hover, .legend-item.active { background: var(--hover); }
 /* Pinned by a click, so it survives the pointer moving away. */
 .legend-item.pinned { background: var(--accent-soft); }
 .legend-item.pinned .legend-name { font-weight: 680; }
@@ -310,7 +442,7 @@ header h1 {
 .legend-item .swatch {
   flex: 0 0 auto;
   width: 11px; height: 11px; border-radius: 3px;
-  box-shadow: inset 0 0 0 1px rgba(16, 21, 28, 0.18);
+  box-shadow: inset 0 0 0 1px rgba(127, 127, 127, 0.35);
 }
 .legend-text { min-width: 0; }
 .legend-name {
@@ -323,6 +455,11 @@ header h1 {
   font-variant-numeric: tabular-nums;
 }
 
+/* The search and the tools cannot both keep full width on a phone, so the
+   search drops to an icon-width field and the tools to icons only. */
+@media (max-width: 1080px) {
+  .search input { width: 118px; }
+}
 @media (max-width: 860px) {
   #shell { flex-direction: column; }
   #panel {
@@ -330,10 +467,12 @@ header h1 {
     border-bottom: 1px solid var(--line); max-height: 56%;
   }
   #map { min-height: 44vh; }
-  .toolbar { top: 10px; }
+  #topbar { top: 10px; gap: 6px; }
   .tool span { display: none; }
   .tool { padding: 8px 10px; }
   .tool-sep { margin: 3px 0; }
+  .search { padding-left: 8px; }
+  .search input { width: 96px; }
   /* Below the toolbar rather than beside it - there is no room for both. */
   .legend { top: 56px; right: 10px; width: 168px; max-height: calc(100% - 70px); }
 }

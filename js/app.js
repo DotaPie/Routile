@@ -1,25 +1,47 @@
-/* Routile frontend: drag out a shape, drop a start pin, compute, then drive. */
+/* Routile frontend: drag out zones, drop a start pin, compute, then drive. */
 
 import * as config from './config.js';
 import { Area } from './area.js';
 import { gpxDocument, gpxZip } from './gpx.js';
-import { estimate } from './stats.js';
 
 const $ = (id) => document.getElementById(id);
 
 // The three ways to draw. Each one is a full drag gesture: press, move, release.
 const SHAPES = ['rect', 'circle', 'freehand'];
 
-// One colour per session, ordered by how well each reads on an OSM basemap.
-// Violet first: OSM Carto paints primary roads orange and trunk roads salmon,
-// so an orange route is easy to mistake for the map's own road colouring - that
-// is exactly what made a perfectly continuous route look "disconnected". Blue
-// is left out entirely, since the drawn area is blue.
-const SESSION_COLORS = [
-  '#7c3aed', '#0d9488', '#c026d3', '#ea580c', '#65a30d',
-  '#e11d48', '#0284c7', '#ca8a04', '#059669', '#be123c',
-];
-const sessionColor = (i) => SESSION_COLORS[i % SESSION_COLORS.length];
+/* Two basemaps and two route palettes, because a route drawn for a paper-white
+   OSM tile disappears on a dark one and the other way round. Each palette
+   leaves out its own theme's accent hue: the drawn zones wear that, and a
+   session line the same colour as the zone outline reads as part of it. */
+const THEMES = {
+  dark: {
+    url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+    subdomains: 'abcd',
+    maxZoom: 20,
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> '
+      + 'contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+    // Bright, and no green.
+    sessions: ['#a78bfa', '#22d3ee', '#f472b6', '#fb923c', '#facc15',
+               '#f87171', '#60a5fa', '#e879f9', '#38bdf8', '#fda4af'],
+  },
+  light: {
+    url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+    subdomains: 'abc',
+    maxZoom: 19,
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+    // Violet first: OSM Carto paints primary roads orange and trunk roads
+    // salmon, so an orange route is easy to mistake for the map's own road
+    // colouring. Blue is left out entirely, since the drawn zones are blue.
+    sessions: ['#7c3aed', '#0d9488', '#c026d3', '#ea580c', '#65a30d',
+               '#e11d48', '#0284c7', '#ca8a04', '#059669', '#be123c'],
+  },
+};
+
+const THEME_KEY = 'routile-theme';
+const themeName = () =>
+  (document.documentElement.dataset.theme === 'light' ? 'light' : 'dark');
+const theme = () => THEMES[themeName()];
+const sessionColor = (i) => theme().sessions[i % theme().sessions.length];
 
 const ROUTE_WEIGHT = 3;
 const ROUTE_WEIGHT_HOT = 6.5;
@@ -33,10 +55,11 @@ const ARROW_ZOOM = 15;      // below this an arrow is smaller than the junction
 const POINT_ZOOM = 16;      // waypoints are dense; they need more room still
 
 const state = {
-  shape: null,         // the drawn area, as the pipeline expects it
-  shapeLayer: null,
+  shapes: [],          // every drawn zone; they merge into one job
+  shapeLayers: [],     // index-aligned with shapes
   startLatLng: null,
   startMarker: null,
+  tileLayer: null,
   routeLayers: [],     // one polyline per session, index-aligned with the legend
   sessionPoints: [],   // the offset points behind each of those polylines
   arrowsBySession: [],
@@ -48,7 +71,8 @@ const state = {
   lastShape: 'rect',   // which tool a shift+drag uses while panning
   jobId: 0,
   result: null,
-  estimateTimer: null,
+  checkTimer: null,
+  searching: false,
   progress: null,      // {phase, message, fraction} of the running job
   started: 0,
   ticker: null,
@@ -60,17 +84,12 @@ const state = {
 const map = L.map('map', { zoomControl: true, boxZoom: false })
   .setView([48.148, 17.107], 14);
 
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-  maxZoom: 19,
-  attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-}).addTo(map);
-
 const cssVar = (name) =>
   getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 
-// interactive:false throughout: the drawn area is a backdrop, not a control.
+// interactive:false throughout: a drawn zone is a backdrop, not a control.
 // Left interactive it would take the pointer cursor and swallow hovers while
-// you are trying to draw the next shape on top of it.
+// you are trying to draw the next zone on top of it.
 const AREA_STYLE = () => ({
   color: cssVar('--accent'), weight: 2, fillOpacity: 0.08, interactive: false,
 });
@@ -79,8 +98,8 @@ const DRAFT_STYLE = () => ({
   interactive: false,
 });
 
-// Same glyph as the Start button in the toolbar, so the map marker and the
-// control that places it read as the same thing.
+// Same glyph as the Start button in the toolbar and as the cursor that places
+// it, so all three read as the same thing.
 const START_ICON = L.divIcon({
   className: 'start-pin',
   html: '<svg viewBox="0 0 24 24" aria-hidden="true">'
@@ -93,9 +112,14 @@ const START_ICON = L.divIcon({
 
 // These sit inside the map container, so Leaflet must not treat clicks and
 // drags on them as map gestures.
-for (const id of ['toolbar', 'legend']) {
+for (const id of ['topbar', 'legend']) {
   L.DomEvent.disableClickPropagation($(id));
   L.DomEvent.disableScrollPropagation($(id));
+}
+// Leaflet's keyboard handler listens on the map container, which the search box
+// lives inside: without this, arrow keys would pan the map mid-word.
+for (const type of ['keydown', 'keyup', 'keypress']) {
+  L.DomEvent.on($('search-input'), type, L.DomEvent.stopPropagation);
 }
 
 // Arrows and waypoint dots are rebuilt for the visible area on every pan and
@@ -103,6 +127,37 @@ for (const id of ['toolbar', 'legend']) {
 state.arrowLayer = L.layerGroup().addTo(map);
 state.pointLayer = L.layerGroup().addTo(map);
 map.on('moveend zoomend', () => refreshDetail());
+
+/* ---------------------------------------------------------------- theme */
+function applyTheme(name) {
+  document.documentElement.dataset.theme = name;
+  try { localStorage.setItem(THEME_KEY, name); } catch (err) { /* private mode */ }
+
+  const t = THEMES[name];
+  if (state.tileLayer) map.removeLayer(state.tileLayer);
+  state.tileLayer = L.tileLayer(t.url, {
+    subdomains: t.subdomains, maxZoom: t.maxZoom, attribution: t.attribution,
+  }).addTo(map);
+
+  // Everything already on the map that carries a theme colour. The start pin
+  // and the drawn zones take theirs from CSS variables, so the pin needs
+  // nothing; the zones are Leaflet paths and do.
+  for (const layer of state.shapeLayers) layer.setStyle(AREA_STYLE());
+  state.routeLayers.forEach((line, i) => {
+    if (line) line.setStyle({ color: sessionColor(i) });
+  });
+  if (state.result) {
+    // Rebuilt for the new swatch colours, so the pinned row has to be put back.
+    const pinned = state.pinned;
+    buildLegend(state.result.sessions);
+    pin(pinned);
+  }
+  refreshDetail();
+}
+
+applyTheme(themeName());
+$('theme-toggle').onclick = () =>
+  applyTheme(themeName() === 'dark' ? 'light' : 'dark');
 
 /* -------------------------------------------------------------- drawing */
 // One drag gesture, three shapes. `drag.tool` is fixed at mousedown so a key
@@ -125,6 +180,8 @@ function activeTool(ev) {
 }
 
 map.on('mousedown', (ev) => {
+  // Left button only: the other two are the temporary pan grip below.
+  if (ev.originalEvent && ev.originalEvent.button !== 0) return;
   const tool = activeTool(ev);
   if (!tool) return;
   if (drag) discardDraft();
@@ -202,7 +259,7 @@ function finishDrag(latlng) {
   if (tool === 'rect') {
     const bounds = L.latLngBounds(from, latlng);
     if (pixelGap(bounds.getNorthWest(), bounds.getSouthEast()) < MIN_DRAG_PX) return;
-    setShape({
+    addShape({
       type: 'rect',
       west: bounds.getWest(), south: bounds.getSouth(),
       east: bounds.getEast(), north: bounds.getNorth(),
@@ -210,7 +267,7 @@ function finishDrag(latlng) {
   } else if (tool === 'circle') {
     // Half the rectangle's threshold: this is a radius, not a diagonal.
     if (pixelGap(from, latlng) < MIN_DRAG_PX / 2) return;
-    setShape({
+    addShape({
       type: 'circle',
       lat: from.lat, lon: from.lng, radius_m: from.distanceTo(latlng),
     });
@@ -220,7 +277,7 @@ function finishDrag(latlng) {
     const raw = closing ? points : points.concat([latlng]);
     const outline = simplifyOutline(raw);
     if (outline.length < 3) return;
-    setShape({ type: 'freehand', points: outline.map((p) => [p.lat, p.lng]) });
+    addShape({ type: 'freehand', points: outline.map((p) => [p.lat, p.lng]) });
   }
 }
 
@@ -257,18 +314,99 @@ map.on('click', (ev) => {
   if (state.pinned !== null) pin(null);
 });
 
-/* ------------------------------------------------------- the drawn area */
-function setShape(shape) {
-  // One shape at a time: drawing again replaces whatever was there.
-  state.shape = shape;
-  if (state.shapeLayer) map.removeLayer(state.shapeLayer);
-  state.shapeLayer = shapeLayer(shape).addTo(map);
+/* --------------------------------------------------- temporary pan grip */
+/* Holding the middle or the right mouse button pans from wherever the pointer
+   is, whatever tool is armed, and hands that tool back on release. The Pan
+   button lights up while it lasts, so the map never changes behaviour without
+   the toolbar saying so.
 
+   Leaflet's own drag handler answers to the left button only - which the draw
+   tools need - so the panning here is done by hand. */
+const PAN_BUTTONS = new Set([1, 2]);
+const mapEl = $('map');
+let tempPan = null;
+
+mapEl.addEventListener('mousedown', (ev) => {
+  if (tempPan || !PAN_BUTTONS.has(ev.button)) return;
+  if (ev.target.closest('#topbar, .legend, .leaflet-control')) return;
+  ev.preventDefault();
+  if (drag) finishDrag(null);     // a half-drawn zone is abandoned, not kept
+  tempPan = { mode: state.mode, x: ev.clientX, y: ev.clientY };
+  setMode('pan');
+  mapEl.classList.add('grabbing');
+});
+
+document.addEventListener('mousemove', (ev) => {
+  if (!tempPan) return;
+  const dx = ev.clientX - tempPan.x;
+  const dy = ev.clientY - tempPan.y;
+  tempPan.x = ev.clientX;
+  tempPan.y = ev.clientY;
+  if (dx || dy) map.panBy([-dx, -dy], { animate: false });
+});
+
+document.addEventListener('mouseup', (ev) => {
+  if (!tempPan || !PAN_BUTTONS.has(ev.button)) return;
+  setMode(tempPan.mode);          // stays on Pan if that is where it started
+  tempPan = null;
+  mapEl.classList.remove('grabbing');
+});
+
+// The right button is a pan grip here, so its menu would fire on every release
+// - except over the search box, where a paste menu is the whole point.
+mapEl.addEventListener('contextmenu', (ev) => {
+  if (ev.target.closest('#topbar')) return;
+  ev.preventDefault();
+});
+
+/* ------------------------------------------------------- the drawn zones */
+/* Zones accumulate: each new one joins the rest rather than replacing it, and
+   they are computed as a single job. Clear starts over. */
+function addShape(shape) {
+  state.shapes.push(shape);
+  state.shapeLayers.push(shapeLayer(shape).addTo(map));
   clearRoute();
-  $('area-info').classList.remove('muted');
-  $('area-info').textContent = `${areaKm2(shape).toFixed(2)} km²`;
-  $('compute').disabled = false;
-  scheduleEstimate();
+  syncZones();
+}
+
+function clearZones() {
+  for (const layer of state.shapeLayers) map.removeLayer(layer);
+  state.shapeLayers = [];
+  state.shapes = [];
+  clearRoute();
+  showError(null);
+  syncZones();
+}
+
+/* One shape, or all of them as a single merged area. */
+function shapePayload() {
+  if (!state.shapes.length) return null;
+  return state.shapes.length === 1
+    ? state.shapes[0]
+    : { type: 'multi', shapes: state.shapes };
+}
+
+function syncZones() {
+  const n = state.shapes.length;
+  $('clear-zones').disabled = n === 0;
+  $('compute').disabled = n === 0;
+
+  const info = $('area-info');
+  info.classList.toggle('muted', n === 0);
+  if (!n) {
+    info.textContent = '--';
+    return;
+  }
+  // The rough figure lands the instant the mouse comes up; the exact geodesic
+  // one replaces it a moment later.
+  info.textContent = areaText(
+    state.shapes.reduce((sum, s) => sum + roughKm2(s), 0), n
+  );
+  scheduleCheck();
+}
+
+function areaText(km2, zones) {
+  return `${km2.toFixed(2)} km²${zones > 1 ? ` · ${zones} zones` : ''}`;
 }
 
 function shapeLayer(shape) {
@@ -285,14 +423,13 @@ function shapeLayer(shape) {
   return L.polygon(shape.points, AREA_STYLE());
 }
 
-// Rough, for instant feedback the moment the mouse comes up; the estimate
-// overwrites it with the exact geodesic figure a moment later. Longitude
-// degrees shrink with latitude, hence the cosines - at latitude 48 a degree of
+// Rough, for instant feedback the moment the mouse comes up. Longitude degrees
+// shrink with latitude, hence the cosines - at latitude 48 a degree of
 // longitude is 74 km against 111 for latitude, so leaving that out would
 // overstate every area by about 1.5x.
 const KM_PER_DEG = 111.32;
 
-function areaKm2(shape) {
+function roughKm2(shape) {
   if (shape.type === 'circle') {
     return Math.PI * (shape.radius_m / 1000) ** 2;
   }
@@ -347,6 +484,57 @@ for (const [key, id] of Object.entries(TOOL_BUTTONS)) {
 }
 setMode('rect');
 
+$('clear-zones').onclick = () => clearZones();
+
+/* ----------------------------------------------------------- place search */
+/* Nominatim is OpenStreetMap's own geocoder: free, no key, and asked for once
+   per submit rather than on every keystroke - which is both what its usage
+   policy expects and what "type, then press Enter" already implies. */
+const NOMINATIM = 'https://nominatim.openstreetmap.org/search';
+
+$('search').addEventListener('submit', async (ev) => {
+  ev.preventDefault();
+  const query = $('search-input').value.trim();
+  if (!query || state.searching) return;
+
+  const card = $('search');
+  state.searching = true;
+  card.classList.add('searching');
+  card.classList.remove('missed');
+  try {
+    const url = `${NOMINATIM}?format=jsonv2&limit=1&q=${encodeURIComponent(query)}`;
+    const res = await fetch(url, { headers: { Accept: 'application/json' } });
+    if (!res.ok) throw new Error(`the geocoder answered ${res.status}`);
+    const hits = await res.json();
+    if (!hits.length) {
+      card.classList.add('missed');
+      showError(`No place found for "${query}".`);
+      return;
+    }
+    const hit = hits[0];
+    const box = hit.boundingbox;    // [south, north, west, east], as strings
+    if (box && box.length === 4) {
+      // Zoom capped: the box around a single address is metres wide, and
+      // flying to zoom 19 for it loses all sense of where you are.
+      map.fitBounds([[+box[0], +box[2]], [+box[1], +box[3]]],
+        { padding: [24, 24], maxZoom: 16 });
+    } else {
+      map.setView([+hit.lat, +hit.lon], 15);
+    }
+    showError(null);
+    $('search-input').blur();
+  } catch (err) {
+    showError(`Place search failed: ${err.message}`);
+  } finally {
+    state.searching = false;
+    card.classList.remove('searching');
+  }
+});
+
+$('search-input').addEventListener('input', () => {
+  $('search').classList.remove('missed');
+});
+
 /* ---------------------------------------------------------------- config */
 $('passes').max = String(config.PASSES_MAX);
 $(config.BOTH_DIRECTIONS_DEFAULT ? 'dir-both' : 'dir-oneway').checked = true;
@@ -397,7 +585,7 @@ function validate() {
 /* --------------------------------------------------------------- request */
 function payload() {
   const body = {
-    shape: state.shape,
+    shape: shapePayload(),
     both_directions: bothDirections(),
     passes: passesValue() || 1,
     session_minutes: (sessionHours() || NO_SPLIT_HOURS) * 60,
@@ -408,19 +596,19 @@ function payload() {
   return body;
 }
 
-function scheduleEstimate() {
-  clearTimeout(state.estimateTimer);
-  state.estimateTimer = setTimeout(runEstimate, 200);
+function scheduleCheck() {
+  clearTimeout(state.checkTimer);
+  state.checkTimer = setTimeout(runCheck, 200);
 }
 
-/* Instant pre-flight guess, so a 13-hour result is never a surprise. */
-function runEstimate() {
-  if (!state.shape) return;
-  const card = $('estimate-card');
+/* Settings and zones checked together, and the exact geodesic area worked out
+   while we are here: a circle or a freehand loop cannot be measured by the
+   rough formula that ran on mouse-up. */
+function runCheck() {
+  if (!state.shapes.length) return;
 
   const problem = validate();
   if (problem) {
-    card.classList.add('hidden');
     showError(problem);
     $('compute').disabled = true;
     return;
@@ -428,48 +616,24 @@ function runEstimate() {
 
   let area;
   try {
-    area = Area.fromShape(state.shape);
+    area = Area.fromShape(shapePayload());
     area.validate(config.AREA_CAP_KM2);
   } catch (err) {
-    card.classList.add('hidden');
     showError(err.message || 'That area cannot be used.');
     $('compute').disabled = true;
     return;
   }
   showError(null);
   $('compute').disabled = false;
-  card.classList.remove('hidden');
-
-  // A circle or a freehand loop cannot be measured by the rough formula, so
-  // the exact geodesic area replaces the figure shown on mouse-up.
-  const km2 = area.areaKm2();
-  $('area-info').textContent = `${km2.toFixed(2)} km²`;
-  const d = estimate(km2, {
-    passes: passesValue() || 1,
-    bothDirections: bothDirections(),
-    sessionSeconds: Math.max((sessionHours() || NO_SPLIT_HOURS) * 60, 1) * 60,
-  });
-  $('est-km').textContent = `${Math.round(d.drive_km)} km`;
-  $('est-time').textContent = d.duration;
-  $('est-roads').textContent = `${Math.round(d.centerline_km)} km`;
-  $('est-sessions').textContent = sessionEnabled() ? d.sessions : '1';
-
-  const warn = $('est-warn');
-  if (km2 > config.AREA_WARN_KM2) {
-    warn.classList.remove('hidden');
-    warn.textContent = `Big area — roughly ${d.drive_km} km across `
-      + `${d.sessions} sessions. It will compute, but expect a long project.`;
-  } else {
-    warn.classList.add('hidden');
-  }
+  $('area-info').textContent = areaText(area.areaKm2(), state.shapes.length);
 }
 
 ['passes', 'session', 'dir-oneway', 'dir-both', 'session-enabled'].forEach((id) => {
   $(id).addEventListener('change', () => {
     if (id === 'session-enabled') syncSessionField();
-    scheduleEstimate();
+    scheduleCheck();
   });
-  $(id).addEventListener('input', scheduleEstimate);
+  $(id).addEventListener('input', scheduleCheck);
 });
 
 /* --------------------------------------------------------------- compute */
@@ -502,7 +666,7 @@ worker.onerror = (ev) => {
 };
 
 $('compute').onclick = () => {
-  if (!state.shape) return;
+  if (!state.shapes.length) return;
   const problem = validate();
   if (problem) { showError(problem); return; }
 
@@ -511,7 +675,7 @@ $('compute').onclick = () => {
   $('compute').disabled = true;
   state.jobId += 1;
   state.started = performance.now();
-  state.progress = { phase: 'queued', message: 'Starting…', fraction: 0 };
+  state.progress = { phase: 'queued', message: 'Starting...', fraction: 0 };
   renderProgress();
   clearInterval(state.ticker);
   state.ticker = setInterval(renderProgress, 500);
@@ -522,7 +686,7 @@ function finishJob() {
   clearInterval(state.ticker);
   state.ticker = null;
   hideProgress();
-  $('compute').disabled = false;
+  $('compute').disabled = state.shapes.length === 0;
 }
 
 function friendlyError(message) {
@@ -588,9 +752,9 @@ function renderResult(res) {
   // but routes point-to-point with no intermediate stops, so it plans its own
   // way to the finish and ignores the route entirely.
   $('download-note').textContent = many
-    ? 'Open a file in OsmAnd (Navigation → Follow track), Locus Map or '
+    ? 'Open a file in OsmAnd (Navigation, then Follow track), Locus Map or '
       + 'Garmin and it drives every street in order.'
-    : 'Open it in OsmAnd (Navigation → Follow track), Locus Map or '
+    : 'Open it in OsmAnd (Navigation, then Follow track), Locus Map or '
       + 'Garmin and it drives every street in order.';
 }
 
@@ -662,7 +826,7 @@ function offsetRight(points, metres) {
     if (!len) { out[i] = points[i]; continue; }
     east /= len;
     north /= len;
-    // Right of travel is the heading turned 90° clockwise: (north, -east).
+    // Right of travel is the heading turned 90 degrees clockwise: (north, -east).
     out[i] = [
       lat + (-east * metres) / KM_PER_DEG / 1000,
       points[i][1] + (north * metres) / KM_PER_DEG / 1000 / kx,
@@ -745,10 +909,14 @@ function refreshDetail() {
   }
 
   if (zoom >= POINT_ZOOM && state.result) {
+    // Ringed in the map's own background rather than in white, so the dots
+    // stay legible on a dark basemap as well as a pale one.
+    const ring = cssVar('--map-bg');
+    const fill = cssVar('--ink');
     for (const wp of state.result.waypoints || []) {
       if (!bounds.contains([wp.lat, wp.lon])) continue;
       L.circleMarker([wp.lat, wp.lon], {
-        radius: 3.5, weight: 1.5, color: '#fff', fillColor: cssVar('--ink'),
+        radius: 3.5, weight: 1.5, color: ring, fillColor: fill,
         fillOpacity: 0.9, interactive: false,
       }).addTo(state.pointLayer);
     }
