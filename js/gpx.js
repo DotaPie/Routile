@@ -89,8 +89,7 @@ function describe(result, waypointCount, session) {
 
 /* The download: always one zip, whatever the session count, so what comes
    out is the same package every time - the GPX (one file for a single
-   session, one per session otherwise), the map picture when there is one, and
-   metadata.json.
+   session, one per session otherwise) and metadata.json.
 
    That last one is what makes the zip loadable back into the page. GPX has
    nowhere to put "two passes, one way, split into two-hour sessions", nor the
@@ -105,7 +104,7 @@ function describe(result, waypointCount, session) {
    DEFLATE'd, so the copy costs far less than it looks.
 
    Needs the JSZip global. */
-export async function gpxZip(result, { image = null, metadata = null } = {}) {
+export async function gpxZip(result, { metadata = null } = {}) {
   const sessions = result.sessions || [];
   const zip = new JSZip();
   if (sessions.length <= 1) {
@@ -120,7 +119,6 @@ export async function gpxZip(result, { image = null, metadata = null } = {}) {
       );
     });
   }
-  if (image) zip.file('map.png', image);
   if (metadata) zip.file('metadata.json', JSON.stringify(metadata));
   return zip.generateAsync({ type: 'blob', compression: 'DEFLATE' });
 }

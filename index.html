@@ -30,6 +30,19 @@
       </span>
     </header>
 
+    <!-- Reads back a zip this page produced: the metadata.json inside it holds
+         the settings, the drawn zones and the computed route together. -->
+    <div id="dropzone" class="dropzone" role="button" tabindex="0"
+         aria-label="Load a saved Routile zip">
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M12 15.5V4m0 0L8.2 7.8M12 4l3.8 3.8"/>
+        <path d="M4 14.5v3A2.5 2.5 0 0 0 6.5 20h11a2.5 2.5 0 0 0 2.5-2.5v-3"/>
+      </svg>
+      <span class="dropzone-title">Load a saved route</span>
+      <span class="dropzone-hint">Drop a Routile .zip here, or click to choose</span>
+    </div>
+    <input id="load-file" class="hidden" type="file" accept=".zip,application/zip">
+
     <div class="tiles">
       <div class="tile">
         <span class="tile-label">Area</span>
@@ -94,19 +107,6 @@
       <p class="hint" id="download-note"></p>
     </section>
 
-    <!-- Reads back a zip this page produced: the metadata.json inside it holds
-         the settings, the drawn zones and the computed route together. -->
-    <div id="dropzone" class="dropzone" role="button" tabindex="0"
-         aria-label="Load a saved Routile zip">
-      <svg viewBox="0 0 24 24" aria-hidden="true">
-        <path d="M12 15.5V4m0 0L8.2 7.8M12 4l3.8 3.8"/>
-        <path d="M4 14.5v3A2.5 2.5 0 0 0 6.5 20h11a2.5 2.5 0 0 0 2.5-2.5v-3"/>
-      </svg>
-      <span class="dropzone-title">Load a saved route</span>
-      <span class="dropzone-hint">Drop a Routile .zip here, or click to choose</span>
-    </div>
-    <input id="load-file" class="hidden" type="file" accept=".zip,application/zip">
-
   </aside>
 
   <main id="stage">
@@ -165,13 +165,24 @@
 
       <span id="basemap-sep" class="tool-sep" aria-hidden="true"></span>
 
-      <!-- Options are filled in from BASEMAPS in config.js. -->
-      <label id="basemap-field" class="basemap">
-        <svg viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M9 4.5 3.5 7v12.5L9 17l6 2.5 5.5-2.5V4.5L15 7 9 4.5zM9 4.5V17M15 7v12.5"/>
-        </svg>
-        <select id="basemap" aria-label="Choose the basemap"></select>
-      </label>
+      <!-- Rows are filled in from BASEMAPS in config.js. Written out rather
+           than left to a <select>, whose popup is drawn by the OS and cannot
+           be given the panel's shape or the accent on the chosen row. -->
+      <div id="basemap-field" class="basemap">
+        <button id="basemap-button" class="basemap-button" type="button"
+                aria-haspopup="listbox" aria-expanded="false"
+                aria-label="Choose the basemap">
+          <svg class="basemap-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M9 4.5 3.5 7v12.5L9 17l6 2.5 5.5-2.5V4.5L15 7 9 4.5zM9 4.5V17M15 7v12.5"/>
+          </svg>
+          <span id="basemap-label"></span>
+          <svg class="basemap-chevron" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="m7 10 5 5 5-5"/>
+          </svg>
+        </button>
+        <ul id="basemap-list" class="basemap-list hidden" role="listbox"
+            aria-label="Basemap"></ul>
+      </div>
     </div>
 
     <div id="legend" class="legend hidden" role="list" aria-label="Sessions"></div>

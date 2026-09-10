@@ -170,32 +170,69 @@ html, body {
 }
 
 /* ------------------------------------------------------------ map picker */
-/* Last on the bar, past the search. A native select: the option list is drawn
-   by the OS, which keeps it keyboard- and screen-reader-correct for free and
-   costs no popup code - the trade is that only the closed state is styleable,
-   which is all that shows on the bar anyway. */
-.basemap {
+/* Last on the bar, past the search. Built rather than a native <select>: that
+   popup is an OS window, so it keeps its own square corners and its own
+   highlight colour whatever the page asks for. This one is a card like the
+   bar it hangs from, and the chosen row wears the accent. */
+.basemap { position: relative; padding-left: 8px; }
+.basemap-button {
   display: flex; align-items: center; gap: 5px;
-  padding-left: 8px;
+  padding: 6px 6px 6px 0;
+  font: inherit; font-size: 13px; font-weight: 520;
   color: var(--ink-2);
+  background: transparent; border: 0; border-radius: 8px;
   cursor: pointer;
+  transition: color 0.12s ease;
 }
-.basemap:hover { color: var(--ink); }
-.basemap svg {
-  width: 15px; height: 15px; flex: 0 0 auto;
+.basemap-button:hover { color: var(--ink); }
+.basemap-button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.basemap-button span {
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.basemap-icon, .basemap-chevron {
+  flex: 0 0 auto;
   fill: none; stroke: currentColor; stroke-width: 1.7;
   stroke-linecap: round; stroke-linejoin: round;
 }
-.basemap select {
-  font: inherit; font-size: 13px; font-weight: 520;
-  color: inherit; background: transparent;
-  border: 0; border-radius: 8px;
-  padding: 6px 2px 6px 0;
-  cursor: pointer;
+.basemap-icon { width: 15px; height: 15px; }
+.basemap-chevron { width: 14px; height: 14px; color: var(--ink-3); }
+[aria-expanded="true"] .basemap-chevron { transform: rotate(180deg); }
+
+/* Hangs below the bar, right-aligned to it, and wide enough for the longest
+   name rather than sized to the button - a list that narrower than its rows
+   is what made the native one look pinched. */
+.basemap-list {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 9px); right: 0;
+  min-width: max-content;
+  margin: 0; padding: 4px;
+  list-style: none;
+  background: var(--glass);
+  backdrop-filter: blur(8px);
+  border: 1px solid var(--line-2);
+  border-radius: 12px;
+  box-shadow: var(--shadow-lg);
 }
-.basemap select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-/* The list itself is an OS window, so it does not inherit the page's ink. */
-.basemap option { color: var(--ink); background: var(--panel); }
+.basemap-list li {
+  padding: 7px 12px;
+  font-size: 13px; font-weight: 520;
+  color: var(--ink-2);
+  white-space: nowrap;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.basemap-list li:hover { background: var(--hover); color: var(--ink); }
+/* The chosen one, in the accent the rest of the bar uses for "this is on". */
+.basemap-list li[aria-selected="true"] {
+  color: var(--accent);
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1.5px var(--accent);
+}
+.basemap-list li.cursor:not([aria-selected="true"]) {
+  background: var(--hover); color: var(--ink);
+}
 
 /* ------------------------------------------------------- map tool bar */
 .toolbar { display: flex; gap: 3px; }
@@ -571,45 +608,11 @@ html, body {
    dock than use it. */
 #stage.tools-left #topbar { left: 14px; transform: none; }
 
-/* ... and only if even a left-hand icon bar would run into the sessions does
-   the whole thing come out of the map and stack below it, the sessions
-   following underneath. Floating it on top of a map this narrow would cover
-   the very thing the bar is there to help you use. */
-#stage.tools-docked #topbar {
-  position: static;
-  transform: none;
-  width: auto;
-  flex-wrap: wrap;         /* the search box drops to its own line if need be */
-  margin: 8px 10px 0;
-  padding: 4px;
-  background: var(--panel-2);
-  backdrop-filter: none;
-  box-shadow: none;
-}
-/* The tools hold their natural width rather than squeezing: an overflowing
-   row is the signal that they should be dropping their labels instead. */
-#stage.tools-docked #toolbar { flex: 0 0 auto; }
-#stage.tools-docked .search-sep { display: none; }
-#stage.tools-docked .search { flex: 1 1 180px; padding-left: 4px; }
-#stage.tools-docked .search input { width: auto; flex: 1 1 auto; }
-
-/* One scrolling row of chips rather than a column, so a dozen sessions cost
-   the same sliver of screen as two. */
-#stage.tools-docked .legend {
-  position: static;
-  top: auto; right: auto; width: auto;
-  margin: 8px 10px;
-  max-height: none;
-  display: flex; gap: 4px;
-  overflow-x: auto; overflow-y: hidden;
-  background: var(--panel-2);
-  backdrop-filter: none;
-  box-shadow: none;
-}
-#stage.tools-docked .legend-item { width: auto; flex: 0 0 auto; }
-#stage.tools-docked .legend-text { display: flex; align-items: baseline; gap: 7px; }
-#stage.tools-docked .legend-name,
-#stage.tools-docked .legend-meta { white-space: nowrap; }
+/* ... and if even a left-hand icon bar would run into the sessions, the answer
+   is not to fold the bar out of the map but to give the map more map. The
+   panel stacks above it, the way it does on a phone, which hands the stage the
+   panel's whole 388px - nearly always more than the bar was short by. See
+   .app-stacked below. */
 
 /* --------------------------------------------------------- touch devices */
 /* Set from script off (pointer: coarse), so it follows the input the device
@@ -633,18 +636,41 @@ html, body {
   border: 2px solid transparent; background-clip: content-box;
 }
 
-/* On a phone the panel stacks above the map. The bar and the sessions are
-   docked below it too, but that is the script's doing - the same breakpoint
-   read from layoutOverlays(), so the two layouts cannot disagree. */
-@media (max-width: 860px) {
-  #shell { flex-direction: column; }
-  #panel {
-    width: 100%; min-width: 0; border-right: 0;
-    border-bottom: 1px solid var(--line);
-    max-height: 32%;
-    overflow-y: scroll;      /* not auto: keep the track, so the fold shows */
-    padding: 16px 16px 20px;
-  }
-  #stage { flex: 1 1 auto; }
-  #map { min-height: 46vh; }
+/* ------------------------------------------------------- stacked layout */
+/* The phone shape, and what a narrow desktop window falls back to: the panel
+   above the map rather than beside it, so the map spans the window. Switched
+   on by layoutOverlays() - from a measurement when the top bar has run out of
+   room, and unconditionally below the breakpoint in that function.
+
+   The bar and the sessions stay floating over the map throughout, as they do
+   in a phone map app. Nothing folds out of the map any more. */
+.app-stacked #shell { flex-direction: column; }
+.app-stacked #panel {
+  width: 100%; min-width: 0; border-right: 0;
+  border-bottom: 1px solid var(--line);
+  max-height: 38%;
+  overflow-y: scroll;        /* not auto: keep the track, so the fold shows */
+  padding: 16px 16px 20px;
+}
+.app-stacked #stage { flex: 1 1 auto; }
+.app-stacked #map { min-height: 46vh; }
+
+/* Stacked, the bar is as wide as the window allows and no wider, and the
+   search box is what gives: on a phone there is no width at which the tools,
+   a 190px field and the map picker all fit at their natural size, and a field
+   that shrinks is a better answer than a bar that runs off the screen. */
+.app-stacked #topbar {
+  width: auto;
+  max-width: calc(100% - 20px);
+  left: 10px; right: 10px;
+  transform: none;
+}
+.app-stacked .search { flex: 1 1 60px; }
+.app-stacked .search input { width: auto; flex: 1 1 40px; min-width: 0; }
+
+/* The bar now spans the width, so the sessions cannot share the top line with
+   it the way they do beside a centred bar - they go under it instead. */
+.app-stacked .legend {
+  top: 66px;
+  max-height: calc(100% - 80px);
 }

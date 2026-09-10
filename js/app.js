@@ -4,7 +4,6 @@ import * as config from './config.js';
 import { Area } from './area.js';
 import { DetailLayer } from './detail.js';
 import { gpxZip } from './gpx.js';
-import { mapSnapshot } from './snapshot.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -206,20 +205,104 @@ function setBasemap(id, { save = true } = {}) {
   applyHighlight(state.hovered !== null ? state.hovered : state.pinned,
     { scroll: false });
 
-  if ($('basemap').value !== basemap.id) $('basemap').value = basemap.id;
+  $('basemap-label').textContent = basemap.label;
+  for (const li of $('basemap-list').children) {
+    li.setAttribute('aria-selected', String(li.dataset.id === basemap.id));
+  }
   if (save) {
     try { localStorage.setItem(BASEMAP_KEY, basemap.id); } catch (err) { /* private mode */ }
   }
 }
 
-$('basemap').innerHTML = BASEMAP_CHOICES.map(
-  (m) => `<option value="${m.id}">${escapeHtml(m.label)}</option>`).join('');
-$('basemap').addEventListener('change', (ev) => setBasemap(ev.target.value));
+/* ------------------------------------------------------- the map picker */
+$('basemap-list').innerHTML = BASEMAP_CHOICES.map(
+  (m) => `<li role="option" aria-selected="false" data-id="${m.id}">`
+       + `${escapeHtml(m.label)}</li>`).join('');
+
 // One map on offer is not a choice; the picker and its hairline only appear
 // when there are two. That is the keyless case - see BASEMAPS in config.js.
 const onlyOneMap = BASEMAP_CHOICES.length < 2;
 $('basemap-field').classList.toggle('hidden', onlyOneMap);
 $('basemap-sep').classList.toggle('hidden', onlyOneMap);
+
+/* Open state lives in aria-expanded, so the attribute that tells a screen
+   reader is the same one the stylesheet turns the chevron with - they cannot
+   drift apart. `cursor` is the keyboard's position, which is not the
+   selection until Enter. */
+function pickerOpen() { return $('basemap-button').getAttribute('aria-expanded') === 'true'; }
+
+function openPicker(open) {
+  $('basemap-button').setAttribute('aria-expanded', String(open));
+  $('basemap-list').classList.toggle('hidden', !open);
+  if (open) moveCursor([...$('basemap-list').children]
+    .findIndex((li) => li.dataset.id === basemap.id));
+  else clearCursor();
+}
+
+function clearCursor() {
+  for (const li of $('basemap-list').children) li.classList.remove('cursor');
+}
+
+function moveCursor(index) {
+  const rows = [...$('basemap-list').children];
+  if (!rows.length) return;
+  const at = (index + rows.length) % rows.length;
+  clearCursor();
+  rows[at].classList.add('cursor');
+  rows[at].scrollIntoView({ block: 'nearest' });
+}
+
+function cursorIndex() {
+  return [...$('basemap-list').children].findIndex((li) => li.classList.contains('cursor'));
+}
+
+$('basemap-button').addEventListener('click', () => openPicker(!pickerOpen()));
+
+$('basemap-list').addEventListener('click', (ev) => {
+  const li = ev.target.closest('li');
+  if (!li) return;
+  setBasemap(li.dataset.id);
+  openPicker(false);
+  $('basemap-button').focus();
+});
+
+// Hover and keyboard share one cursor, so moving the mouse does not leave a
+// stale highlight somewhere else in the list.
+$('basemap-list').addEventListener('mousemove', (ev) => {
+  const li = ev.target.closest('li');
+  if (li) moveCursor([...$('basemap-list').children].indexOf(li));
+});
+
+$('basemap-field').addEventListener('keydown', (ev) => {
+  const open = pickerOpen();
+  if (ev.key === 'Escape' && open) {
+    ev.stopPropagation();          // Escape also cancels a half-drawn zone
+    openPicker(false);
+    $('basemap-button').focus();
+  } else if (ev.key === 'ArrowDown' || ev.key === 'ArrowUp') {
+    ev.preventDefault();
+    if (!open) openPicker(true);
+    else moveCursor(cursorIndex() + (ev.key === 'ArrowDown' ? 1 : -1));
+  } else if (open && (ev.key === 'Enter' || ev.key === ' ')) {
+    ev.preventDefault();
+    const li = $('basemap-list').children[cursorIndex()];
+    if (li) setBasemap(li.dataset.id);
+    openPicker(false);
+    $('basemap-button').focus();
+  } else if (ev.key === 'Home' || ev.key === 'End') {
+    if (!open) return;
+    ev.preventDefault();
+    moveCursor(ev.key === 'Home' ? 0 : $('basemap-list').children.length - 1);
+  }
+});
+
+// Anywhere else - including the map, and including a tab away.
+document.addEventListener('pointerdown', (ev) => {
+  if (pickerOpen() && !$('basemap-field').contains(ev.target)) openPicker(false);
+});
+$('basemap-field').addEventListener('focusout', (ev) => {
+  if (pickerOpen() && !$('basemap-field').contains(ev.relatedTarget)) openPicker(false);
+});
 
 let storedMap = null;
 try { storedMap = localStorage.getItem(BASEMAP_KEY); } catch (err) { /* private mode */ }
@@ -1113,12 +1196,7 @@ $('download').onclick = async () => {
   button.disabled = true;
   button.textContent = 'Preparing...';
   try {
-    // The picture is a bonus: if the tiles will not come, the zip still does.
-    const image = await snapshotImage().catch((err) => {
-      console.warn('map image skipped', err);
-      return null;
-    });
-    const blob = await gpxZip(res, { image, metadata: routeMetadata(res) });
+    const blob = await gpxZip(res, { metadata: routeMetadata(res) });
     saveBlob(blob, res.sessions.length > 1 ? 'routile-sessions.zip' : 'routile-route.zip');
   } catch (err) {
     showError(`Could not build the file: ${err.message}`);
@@ -1127,23 +1205,6 @@ $('download').onclick = async () => {
     button.textContent = label;
   }
 };
-
-/* The map as the route sees it: every session line, the zones and the start,
-   framed on the route rather than on wherever the screen is scrolled to. */
-function snapshotImage() {
-  const sessions = state.result.sessions.map((session, i) => ({
-    points: state.sessionPoints[i] || [],
-    label: `Session ${i + 1}`,
-    meta: `${Number(session.km).toFixed(1)} km · ${humanMinutes(session.minutes)}`,
-  }));
-  const st = state.result.stats;
-  return mapSnapshot({
-    sessions,
-    regions: state.regions,
-    start: state.startLatLng ? [state.startLatLng.lat, state.startLatLng.lng] : null,
-    title: `${st.total_km} km · ${st.duration}`,
-  });
-}
 
 function saveBlob(blob, filename) {
   const url = URL.createObjectURL(blob);
@@ -1302,9 +1363,12 @@ function buildLegend(sessions) {
 /* The top bar floats centred over the map with the session list in the corner
    beside it, and gives way in three steps as the window narrows: the tools
    drop their labels, then the bar gives up the centre and slides left to use
-   the empty half of the map, and only when even that will not clear the
-   sessions does the whole bar - search box and all - come out of the map and
-   stack below it with the sessions underneath.
+   the empty half of the map, and finally the whole page changes shape - the
+   panel stacks above the map instead of beside it, which hands the map the
+   panel's 388px and is nearly always more than the bar was short by.
+
+   Nothing ever leaves the map. The bar and the sessions float over it at every
+   size, the way they do in a phone map app.
 
    Measured rather than guessed from a breakpoint, because how much room the
    bar needs depends on its labels and how much is left depends on whether
@@ -1314,25 +1378,33 @@ function buildLegend(sessions) {
    still does not fit.
 
    The steps are cumulative, and deliberately so: a narrower window can only
-   ever take more away, never hand the labels back. Reaching the bar's dock at
-   one width and its labels at a narrower one would have the tools flickering
-   in and out as the window is dragged. */
+   ever take more away, never hand the labels back. Reaching one step at a
+   width and undoing it at a narrower one would have the bar flickering as the
+   window is dragged.
+
+   The stacking decision is measured against the *unstacked* width, because
+   the classes are stripped before measuring - so it asks "would this fit if
+   the panel were beside the map?" and never against the width its own answer
+   produced. That is what keeps it from oscillating. */
 const phoneLayout = window.matchMedia('(max-width: 860px)');
 phoneLayout.addEventListener('change', () => layoutOverlays());
 
 function layoutOverlays() {
   const stage = $('stage');
-  stage.classList.remove('tools-tight', 'tools-left', 'tools-docked');
-  // A phone stacks the panel above the map and everything else below it, so
-  // there is nothing left over the map to make room in - it is the last step
-  // of the three, arrived at directly.
+  const root = document.documentElement;
+  stage.classList.remove('tools-tight', 'tools-left');
+  root.classList.remove('app-stacked');
+
+  // Below the breakpoint the stacked shape is simply the right one, whatever
+  // the bar would or would not fit into.
   if (phoneLayout.matches) {
-    stage.classList.add('tools-tight', 'tools-left', 'tools-docked');
+    stage.classList.add('tools-tight', 'tools-left');
+    root.classList.add('app-stacked');
     return;
   }
   if (barIsCrowded()) stage.classList.add('tools-tight');
   if (barIsCrowded()) stage.classList.add('tools-left');
-  if (barIsCrowded()) stage.classList.add('tools-docked');
+  if (barIsCrowded()) root.classList.add('app-stacked');
 }
 
 /* Does the bar, at the width and place it currently has, still clear both
