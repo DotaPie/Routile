@@ -87,9 +87,28 @@ function describe(result, waypointCount, session) {
     + `Part of a ${st.total_km ?? 0} km route that ${summary}.`;
 }
 
+/* When the file was made, as YYYYMMDD-HHMMSS, for the names of the zip and
+   everything in it. Two downloads of the same route are two different files
+   on the disk, and the one you want is the one you made last - which the name
+   has to say, because a downloads folder sorts by name as often as by date
+   and a second copy would otherwise arrive as "routile-route (1).zip".
+
+   The local clock, not UTC: this is stamped for the person who pressed the
+   button, and a stamp that reads three hours off is worse than none. The
+   exact instant is in metadata.json, in ISO, for anything that needs it. */
+export function fileStamp(when = new Date()) {
+  const p = (n) => String(n).padStart(2, '0');
+  return `${when.getFullYear()}${p(when.getMonth() + 1)}${p(when.getDate())}`
+    + `-${p(when.getHours())}${p(when.getMinutes())}${p(when.getSeconds())}`;
+}
+
 /* The download: always one zip, whatever the session count, so what comes
    out is the same package every time - the GPX (one file for a single
    session, one per session otherwise) and metadata.json.
+
+   One `stamp` for the zip and every file inside it, passed in rather than
+   read from the clock here, so the package is stamped with a single moment
+   and the caller can name the zip to match what it holds.
 
    That last one is what makes the zip loadable back into the page. GPX has
    nowhere to put "two passes, one way, split into two-hour sessions", nor the
@@ -104,17 +123,19 @@ function describe(result, waypointCount, session) {
    DEFLATE'd, so the copy costs far less than it looks.
 
    Needs the JSZip global. */
-export async function gpxZip(result, { metadata = null } = {}) {
+export async function gpxZip(result, { metadata = null, stamp = fileStamp() } = {}) {
   const sessions = result.sessions || [];
   const zip = new JSZip();
   if (sessions.length <= 1) {
-    zip.file('routile-route.gpx', gpxDocument(result));
+    zip.file(`routile-route-${stamp}.gpx`, gpxDocument(result));
   } else {
     const width = Math.max(String(sessions.length).length, 2);
     sessions.forEach((session) => {
       const number = session.index + 1;
+      // The number last, so the session files of one download sort together
+      // and in order however they end up mixed with another download's.
       zip.file(
-        `routile-session-${String(number).padStart(width, '0')}.gpx`,
+        `routile-session-${stamp}-${String(number).padStart(width, '0')}.gpx`,
         gpxDocument(result, { session, name: `Routile session ${number} of ${sessions.length}` }),
       );
     });

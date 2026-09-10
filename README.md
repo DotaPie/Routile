@@ -18,10 +18,12 @@ It started as a small tool I needed myself, to systematically scan the roads of 
 4. **Choose how to drive it.** One way covers every street once; Both ways drives each one in both directions. Passes per street repeats the whole route. Split into sessions cuts the drive into outings of a given length, so a big area becomes several manageable trips.
 5. **Compute route**, then **Download**.
 
-The download is always a `.zip`, containing:
+The download is always a `.zip` — `routile-route-YYYYMMDD-HHMMSS.zip`, stamped with the moment you asked for it — containing:
 
-- **`routile-route.gpx`**, the whole drive as one file — or **`routile-session-01.gpx`, `-02.gpx`, …** if you split it into sessions
+- **`routile-route-YYYYMMDD-HHMMSS.gpx`**, the whole drive as one file — or **`routile-session-YYYYMMDD-HHMMSS-01.gpx`, `-02.gpx`, …** if you split it into sessions
 - **`metadata.json`**, everything the page would need to show you this route again
+
+The stamp is your own clock, and the same one throughout a download, so two goes at the same area stay apart on disk and every file says which go it belongs to.
 
 Use for example OsmAnd [![Android](https://img.shields.io/badge/-3DDC84?logo=android&logoColor=white)](https://play.google.com/store/apps/details?id=net.osmand) [![iOS](https://img.shields.io/badge/-0D96F6?logo=apple&logoColor=white)](https://apps.apple.com/app/osmand-maps-travel-navigate/id934850257) to navigate with GPX file.
 

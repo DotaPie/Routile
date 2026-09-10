@@ -1,8 +1,8 @@
-/* One theme: dark, panel and map alike. Every colour is a variable, so nothing
-   downstream hardcodes a shade and a second theme would be a matter of
-   redefining these. The light theme was dropped because the brand green, which
-   reads well on ink, washes out on white - the one place it still has to is
-   the exported PNG, which carries its own palette in snapshot.js. */
+/* One theme for the UI: dark, whichever basemap is on under it. Every colour
+   is a variable, so nothing downstream hardcodes a shade and a light UI would
+   be a matter of redefining these. A light panel was dropped because the brand
+   green, which reads well on ink, washes out on white; the map is the one part
+   that goes light, and it has its own set of variables below. */
 :root {
   color-scheme: dark;
   --bg: #0f1316;
@@ -67,14 +67,20 @@ html, body {
 
 #shell { display: flex; height: 100%; }
 
+/* A column, so the repo link at the foot can claim the leftover height with
+   margin-top:auto. Every child is fixed at its own height - a column flex
+   container would otherwise squeeze them to fit rather than let the panel
+   scroll, which is what overflow-y is here for. */
 #panel {
   width: 388px;
   min-width: 388px;
+  display: flex; flex-direction: column;
   overflow-y: auto;
   background: var(--panel);
   border-right: 1px solid var(--line);
   padding: 22px 22px 32px;
 }
+#panel > * { flex: 0 0 auto; }
 
 /* The map and the things that float over it. On a desktop the search box and
    the session list are absolutely positioned on top; on a phone they drop out
@@ -128,6 +134,13 @@ html, body {
   border-radius: 12px;
   box-shadow: var(--shadow-lg);
 }
+
+/* --------------------------------------------------- picker and search */
+/* The two of them are one piece, because on a narrow window they leave the
+   bar together (see "the finder steps outside" below). While they are on the
+   bar the wrapper generates no box at all, so the bar lays out - and measures
+   - exactly as if its children were the picker and the search themselves. */
+.findbar { display: contents; }
 
 /* ------------------------------------------------------------ place search */
 /* The right-hand end of the top bar, past the tools. */
@@ -348,13 +361,16 @@ html, body {
 .dropzone.busy { opacity: 0.6; cursor: progress; }
 
 /* ------------------------------------------------------------ repo link */
-/* Last thing in the panel, under a hairline: a credit, not a control, so it
-   sits at the quietest ink until you point at it. The mark is a filled path
-   rather than the stroked line icons used elsewhere - it is GitHub's own. */
+/* A credit rather than a control: centred at the foot of the panel, at the
+   quietest ink until you point at it. The mark is a filled path rather than
+   the stroked line icons used elsewhere - it is GitHub's own.
+
+   margin-top:auto takes whatever height the form left over, which pins it to
+   the bottom; the padding is the floor, for when the form fills the panel and
+   there is no leftover to take. */
 .repo-link {
-  display: flex; align-items: center; gap: 8px;
-  margin-top: 26px; padding-top: 16px;
-  border-top: 1px solid var(--line);
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  margin-top: auto; padding-top: 28px;
   font-size: 12.5px; font-weight: 520;
   color: var(--ink-3); text-decoration: none;
   transition: color 0.12s ease;
@@ -549,7 +565,7 @@ html, body {
 #map.grabbing,
 #map.grabbing .leaflet-interactive { cursor: grabbing; }
 /* ... but the panels beside and over the map are still controls. */
-#stage #topbar, #stage #search, #stage .legend { cursor: default; }
+#stage #topbar, #stage #findbar, #stage #search, #stage .legend { cursor: default; }
 #stage .tool, #stage .legend-item, #stage .search-go { cursor: pointer; }
 #stage .search input { cursor: text; }
 
@@ -702,41 +718,50 @@ html, body {
   max-height: calc(100% - 80px);
 }
 
-/* ------------------------------------------------ the tools step outside */
+/* ----------------------------------------------- the finder steps outside */
 /* Narrower still, and the bar cannot hold the tools, the picker and a usable
-   search box at once. The tools are the part that does not need to be over
-   the map - you aim them at the map, you do not read them against it - so
-   they take a strip of their own above it and hand the whole floating bar to
-   the search and the picker.
+   search box at once. The picker and the search are the part that does not
+   need to be over the map - you type into them, you do not aim them at
+   anything - so they take a strip of their own above it, where the field can
+   have the whole width, and the tools keep the floating bar. The tools are
+   the half that wants to stay on the map: they are icons by now, and you use
+   them with the other hand on the map itself.
 
-   The strip is the same #toolbar, moved in the DOM to sit before #map in the
+   The strip is the same #findbar, moved in the DOM to sit before #map in the
    stage's flex column - see layoutOverlays(), which moves it back when the
-   window grows. A CSS `order` could not do it: the toolbar is a child of the
+   window grows. A CSS `order` could not do it: the finder is a child of the
    bar, not a sibling of the map. */
-#stage.tools-above #toolbar {
+#stage.find-above #findbar {
   /* A flex item in the stage's column now, and the map below it is greedy -
      without this the strip is squeezed to a sliver. */
+  display: flex; align-items: center;
   flex: 0 0 auto;
-  justify-content: center;
-  padding: 5px 8px;
+  padding: 4px 10px;
   background: var(--panel);
   border-bottom: 1px solid var(--line);
+  /* The picker's popup hangs out of the strip and over the map - and over the
+     floating bar, which is directly below the strip and would otherwise cover
+     the first row or two of it. Above the bar's 500, below the alert's 600. */
+  position: relative;
+  z-index: 550;
 }
-#stage.tools-above #basemap-sep { display: none; }
-/* The bar it left behind is narrower, so it can sit back in the middle - but
-   it is still positioned against the stage, and the stage now starts with the
-   strip. Both it and the sessions clear that: --tools-strip is the strip's
+/* Its hairline led the picker off the tools; there is nothing to its left on
+   the strip any more. */
+#stage.find-above #basemap-sep { display: none; }
+#stage.find-above .basemap { padding-left: 0; }
+/* The bar it left behind holds icons alone, so it can sit back in the middle -
+   but it is still positioned against the stage, and the stage now starts with
+   the strip. Both it and the sessions clear that: --find-strip is the strip's
    measured height, written by layoutOverlays() so the numbers cannot rot if
-   the buttons ever change size. */
-#stage.tools-above #topbar {
-  top: calc(var(--tools-strip, 44px) + 14px);
+   the field or the picker ever change size. */
+#stage.find-above #topbar {
+  top: calc(var(--find-strip, 44px) + 14px);
   left: 50%; right: auto;
   transform: translateX(-50%);
   width: max-content;
   max-width: calc(100% - 20px);
 }
-#stage.tools-above .basemap { padding-left: 4px; }
-#stage.tools-above .legend {
-  top: calc(var(--tools-strip, 44px) + 66px);
-  max-height: calc(100% - var(--tools-strip, 44px) - 80px);
+#stage.find-above .legend {
+  top: calc(var(--find-strip, 44px) + 66px);
+  max-height: calc(100% - var(--find-strip, 44px) - 80px);
 }

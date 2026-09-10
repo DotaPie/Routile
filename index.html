@@ -158,37 +158,45 @@
 
       <span id="basemap-sep" class="tool-sep" aria-hidden="true"></span>
 
-      <!-- Rows are filled in from BASEMAPS in config.js. Written out rather
-           than left to a <select>, whose popup is drawn by the OS and cannot
-           be given the panel's shape or the accent on the chosen row. -->
-      <div id="basemap-field" class="basemap">
-        <button id="basemap-button" class="basemap-button" type="button"
-                aria-haspopup="listbox" aria-expanded="false"
-                aria-label="Choose the basemap">
-          <svg class="basemap-icon" viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M9 4.5 3.5 7v12.5L9 17l6 2.5 5.5-2.5V4.5L15 7 9 4.5zM9 4.5V17M15 7v12.5"/>
+      <!-- The picker and the search travel together: on a narrow window they
+           leave the floating bar as one piece and become a strip above the
+           map, leaving the tools behind on it. See layoutOverlays(). In the
+           bar the wrapper is display: contents, so it is not a box at all and
+           the bar measures exactly as it did before. -->
+      <div id="findbar" class="findbar">
+
+        <!-- Rows are filled in from BASEMAPS in config.js. Written out rather
+             than left to a <select>, whose popup is drawn by the OS and cannot
+             be given the panel's shape or the accent on the chosen row. -->
+        <div id="basemap-field" class="basemap">
+          <button id="basemap-button" class="basemap-button" type="button"
+                  aria-haspopup="listbox" aria-expanded="false"
+                  aria-label="Choose the basemap">
+            <svg class="basemap-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M9 4.5 3.5 7v12.5L9 17l6 2.5 5.5-2.5V4.5L15 7 9 4.5zM9 4.5V17M15 7v12.5"/>
+            </svg>
+            <span id="basemap-label"></span>
+            <svg class="basemap-chevron" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="m7 10 5 5 5-5"/>
+            </svg>
+          </button>
+          <ul id="basemap-list" class="basemap-list hidden" role="listbox"
+              aria-label="Basemap"></ul>
+        </div>
+
+        <span class="tool-sep search-sep" aria-hidden="true"></span>
+
+        <form id="search" class="search" role="search">
+          <svg class="search-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="10.5" cy="10.5" r="6.5"/><path d="m15.4 15.4 4.1 4.1"/>
           </svg>
-          <span id="basemap-label"></span>
-          <svg class="basemap-chevron" viewBox="0 0 24 24" aria-hidden="true">
-            <path d="m7 10 5 5 5-5"/>
-          </svg>
-        </button>
-        <ul id="basemap-list" class="basemap-list hidden" role="listbox"
-            aria-label="Basemap"></ul>
+          <input id="search-input" type="text" autocomplete="off" spellcheck="false"
+                 placeholder="Search a place" aria-label="Search for a place">
+          <button id="search-go" class="search-go" type="submit" aria-label="Go to this place">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h13M13 6.5 18.5 12 13 17.5"/></svg>
+          </button>
+        </form>
       </div>
-
-      <span class="tool-sep search-sep" aria-hidden="true"></span>
-
-      <form id="search" class="search" role="search">
-        <svg class="search-icon" viewBox="0 0 24 24" aria-hidden="true">
-          <circle cx="10.5" cy="10.5" r="6.5"/><path d="m15.4 15.4 4.1 4.1"/>
-        </svg>
-        <input id="search-input" type="text" autocomplete="off" spellcheck="false"
-               placeholder="Search a place" aria-label="Search for a place">
-        <button id="search-go" class="search-go" type="submit" aria-label="Go to this place">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h13M13 6.5 18.5 12 13 17.5"/></svg>
-        </button>
-      </form>
     </div>
 
     <div id="legend" class="legend hidden" role="list" aria-label="Sessions"></div>

@@ -3,7 +3,7 @@
 import * as config from './config.js';
 import { Area } from './area.js';
 import { DetailLayer } from './detail.js';
-import { gpxZip } from './gpx.js';
+import { gpxZip, fileStamp } from './gpx.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -315,16 +315,24 @@ try { storedMap = localStorage.getItem(BASEMAP_KEY); } catch (err) { /* private 
 setBasemap(storedMap || config.BASEMAP_DEFAULT, { save: false });
 
 /* -------------------------------------------------------------- drawing */
-/* One drag gesture, three shapes, and one code path for a mouse, a finger and
-   a pen: pointer events cover all three. `drag.tool` is fixed at the press so
+/* One gesture, three shapes, and one code path for a mouse, a finger and a
+   pen: pointer events cover all three. `drag.tool` is fixed at the press so
    a key released mid-drag cannot change what is being drawn.
 
-   The pointer is captured, so a drag that leaves the map keeps reporting and
-   a release anywhere still finishes the shape. While a shape tool is armed
-   Leaflet's own dragging is off (see setMode), so on a touch screen one finger
-   draws rather than panning; two fingers still pinch, and the Pan tool hands
-   the map back. */
-let drag = null;   // { tool, pointerId, from, points, layer, ring, closing }
+   Two ways to draw the same shape, and the hand decides which without being
+   asked: hold the button down and the shape follows the drag, or click once
+   and let go and it follows the bare pointer until a second click ends it.
+   The second way is what a long outline wants - a held button across a whole
+   suburb is a cramp - and it costs nothing to offer, because a press that
+   goes nowhere before it is released could not have been a drag anyway.
+   `drag.sticky` says which one is under way.
+
+   The pointer is captured for the held kind, so a drag that leaves the map
+   keeps reporting and a release anywhere still finishes the shape. While a
+   shape tool is armed Leaflet's own dragging is off (see setMode), so on a
+   touch screen one finger draws rather than panning; two fingers still pinch,
+   and the Pan tool hands the map back. */
+let drag = null;   // { tool, pointerId, from, points, layer, ring, closing, sticky }
 
 const MIN_DRAG_PX = 12;        // below this, a drag is an accidental click
 const FREEHAND_STEP_PX = 5;    // sampling distance while drawing by hand
@@ -352,6 +360,15 @@ function pointerLatLng(ev) {
 mapEl.addEventListener('pointerdown', (ev) => {
   // A mouse draws with the left button; the other two are the pan grip below.
   if (ev.pointerType === 'mouse' && ev.button !== 0) return;
+  /* The shape is already following the pointer from an earlier click. This
+     press is the start of the click that ends it - but the shape is not
+     finished here, at the release below, so that pressing and dragging from
+     here still adjusts it before letting go. */
+  if (drag && drag.sticky) {
+    ev.preventDefault();
+    drag.pointerId = ev.pointerId;
+    return;
+  }
   // A second finger mid-drag is a pinch, not a second zone.
   if (drag) return;
   if (ev.target.closest('.leaflet-control')) return;
@@ -365,7 +382,7 @@ mapEl.addEventListener('pointerdown', (ev) => {
 
   const at = pointerLatLng(ev);
   drag = { tool, pointerId: ev.pointerId, from: at, points: [at],
-           layer: null, ring: null, closing: false };
+           layer: null, ring: null, closing: false, sticky: false };
 
   if (tool === 'rect') {
     drag.layer = L.rectangle(L.latLngBounds(at, at), DRAFT_STYLE());
@@ -405,11 +422,29 @@ mapEl.addEventListener('pointermove', (ev) => {
 
 mapEl.addEventListener('pointerup', (ev) => {
   if (!drag || ev.pointerId !== drag.pointerId) return;
-  finishDrag(pointerLatLng(ev));
+  if (ev.pointerType === 'mouse' && ev.button !== 0) return;
+  const at = pointerLatLng(ev);
+  /* Let go without having gone anywhere, and the press was a click rather
+     than the start of a drag: hand the shape to the bare pointer instead of
+     finishing it here, where it would be too small to keep. The next click
+     lands back at the top of this handler and ends it. */
+  if (!drag.sticky && pixelGap(drag.from, at) < MIN_DRAG_PX) {
+    drag.sticky = true;
+    return;
+  }
+  finishDrag(at);
 });
 // The system took the gesture away: a phone call, a system gesture, a pinch.
 mapEl.addEventListener('pointercancel', (ev) => {
   if (drag && ev.pointerId === drag.pointerId) finishDrag(null);
+});
+
+/* A press that lands off the map while a shape is following the pointer - on
+   the panel, on the tool bar, on the sessions - lets go of the shape. It has
+   nothing to finish it with out there, and a draft left hanging over the map
+   with no gesture attached is worse than none. */
+document.addEventListener('pointerdown', (ev) => {
+  if (drag && drag.sticky && !mapEl.contains(ev.target)) finishDrag(null);
 });
 
 function withinSnap(latlng) {
@@ -437,8 +472,9 @@ function discardDraft() {
   drag = null;
 }
 
-/* A press that never grew into a drag is a click on the map: it draws nothing
-   and lets go of whatever the legend has pinned. The map's own click event
+/* The shape came out too small to be one - a click-click in the same spot, or
+   a drag that went nowhere. Nothing is drawn, and it counts as a click on the
+   map: let go of whatever the legend has pinned. The map's own click event
    cannot do this job any more, since a shape tool takes the gesture over at
    the press and the click that would have followed never arrives. */
 function tapped() {
@@ -1187,7 +1223,7 @@ function renderResult(res) {
     ? `Download ${sessions.length} sessions (.zip)`
     : 'Download route (.zip)';
   $('download-note').textContent =
-    'Open the downloaded file(s) in OsmAnd mobile app, for example.';
+    'Open the downloaded .gpx file(s) in OsmAnd or any other similar mobile app.';
 }
 
 $('download').onclick = async () => {
@@ -1198,8 +1234,13 @@ $('download').onclick = async () => {
   button.disabled = true;
   button.textContent = 'Preparing...';
   try {
-    const blob = await gpxZip(res, { metadata: routeMetadata(res) });
-    saveBlob(blob, res.sessions.length > 1 ? 'routile-sessions.zip' : 'routile-route.zip');
+    // One moment for the whole package: the zip, the GPX files inside it and
+    // the `saved` in metadata.json all say the same thing.
+    const meta = routeMetadata(res);
+    const stamp = fileStamp(new Date(meta.saved));
+    const blob = await gpxZip(res, { metadata: meta, stamp });
+    const kind = res.sessions.length > 1 ? 'sessions' : 'route';
+    saveBlob(blob, `routile-${kind}-${stamp}.zip`);
   } catch (err) {
     showError(`Could not build the file: ${err.message}`);
   } finally {
@@ -1394,9 +1435,9 @@ phoneLayout.addEventListener('change', () => layoutOverlays());
 function layoutOverlays() {
   const stage = $('stage');
   const root = document.documentElement;
-  stage.classList.remove('tools-tight', 'tools-left', 'tools-above');
+  stage.classList.remove('tools-tight', 'tools-left', 'find-above');
   root.classList.remove('app-stacked');
-  putToolsInBar();
+  putFinderInBar();
 
   // Below the breakpoint the stacked shape is simply the right one, whatever
   // the bar would or would not fit into.
@@ -1412,22 +1453,23 @@ function layoutOverlays() {
   /* Last resort, and only ever reachable once stacked: the bar is clamped to
      the stage by then, so anything still not fitting overflows rather than
      shrinking - the search box has a floor and will not give up any more
-     width. The tools step out above the map. */
+     width. The picker and the search step out above the map, where the field
+     has the width to itself, and the tools keep the floating bar. */
   if (barOverflows()) {
-    stage.classList.add('tools-above');
-    stage.insertBefore($('toolbar'), $('map'));
+    stage.classList.add('find-above');
+    stage.insertBefore($('findbar'), $('map'));
     // The floating bar and the sessions are positioned against the stage, and
     // the stage now opens with the strip; this is what they clear it by.
-    stage.style.setProperty('--tools-strip', `${$('toolbar').offsetHeight}px`);
+    stage.style.setProperty('--find-strip', `${$('findbar').offsetHeight}px`);
   }
 }
 
-/* The tools' home is the first thing in the floating bar. Put back before
-   every measurement, so what is measured is always the bar entire. */
-function putToolsInBar() {
+/* The finder's home is the tail of the floating bar. Put back before every
+   measurement, so what is measured is always the bar entire. */
+function putFinderInBar() {
   const bar = $('topbar');
-  if ($('toolbar').parentElement !== bar) bar.insertBefore($('toolbar'), bar.firstChild);
-  $('stage').style.removeProperty('--tools-strip');
+  if ($('findbar').parentElement !== bar) bar.appendChild($('findbar'));
+  $('stage').style.removeProperty('--find-strip');
 }
 
 /* True only of a bar that has been clamped and still wants more room. A
