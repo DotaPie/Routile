@@ -318,7 +318,9 @@ html, body {
    target - a small button would be a poor thing to aim a dragged file at. */
 .dropzone {
   display: grid; justify-items: center; gap: 2px;
-  margin-top: 18px; padding: 18px 14px;
+  /* The header's own margin sets the gap above; this one keeps it off the
+     Area and Start tiles below. */
+  margin-bottom: 18px; padding: 18px 14px;
   text-align: center;
   color: var(--ink-3);
   background: transparent;

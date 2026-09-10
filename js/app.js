@@ -300,7 +300,13 @@ $('basemap-field').addEventListener('keydown', (ev) => {
 document.addEventListener('pointerdown', (ev) => {
   if (pickerOpen() && !$('basemap-field').contains(ev.target)) openPicker(false);
 });
+/* Tabbing away closes it. Only tabbing: relatedTarget is null when focus
+   lands on something that cannot take it, and a list row is exactly that - so
+   without this guard, pressing the pointer down on a row closed the list out
+   from under the click that was about to select it. A click anywhere else is
+   the pointerdown handler's job above. */
 $('basemap-field').addEventListener('focusout', (ev) => {
+  if (!ev.relatedTarget) return;
   if (pickerOpen() && !$('basemap-field').contains(ev.relatedTarget)) openPicker(false);
 });
 
@@ -1072,11 +1078,7 @@ async function loadRouteZip(file) {
     throw new Error('That file could not be opened as a zip.');
   }
   const entry = zip.file('metadata.json');
-  if (!entry) {
-    throw new Error('No metadata.json in this zip. Routile only started '
-      + 'writing one recently, so a route downloaded before that cannot be '
-      + 'loaded back.');
-  }
+  if (!entry) throw new Error('No metadata.json in this zip.');
   let meta;
   try {
     meta = JSON.parse(await entry.async('string'));
