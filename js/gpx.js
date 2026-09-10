@@ -89,9 +89,23 @@ function describe(result, waypointCount, session) {
 
 /* The download: always one zip, whatever the session count, so what comes
    out is the same package every time - the GPX (one file for a single
-   session, one per session otherwise) and the map picture when there is one.
+   session, one per session otherwise), the map picture when there is one, and
+   metadata.json.
+
+   That last one is what makes the zip loadable back into the page. GPX has
+   nowhere to put "two passes, one way, split into two-hour sessions", nor the
+   shape that was drawn to ask for it, so none of that survives a round trip
+   through the track alone. The JSON carries the request, the drawn zones and
+   the computed result together, which is enough to put the page back exactly
+   as it was without going near Overpass or the solver again.
+
+   It does repeat geometry the GPX already holds. That is deliberate: reading
+   the track back out of the GPX would leave the arc indices that
+   gpxDocument() slices sessions with to be reconstructed, and the zip is
+   DEFLATE'd, so the copy costs far less than it looks.
+
    Needs the JSZip global. */
-export async function gpxZip(result, { image = null } = {}) {
+export async function gpxZip(result, { image = null, metadata = null } = {}) {
   const sessions = result.sessions || [];
   const zip = new JSZip();
   if (sessions.length <= 1) {
@@ -107,5 +121,6 @@ export async function gpxZip(result, { image = null } = {}) {
     });
   }
   if (image) zip.file('map.png', image);
+  if (metadata) zip.file('metadata.json', JSON.stringify(metadata));
   return zip.generateAsync({ type: 'blob', compression: 'DEFLATE' });
 }

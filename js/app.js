@@ -876,6 +876,203 @@ function showError(msg) {
   box.textContent = msg;
 }
 
+/* ------------------------------------------------------ save and reload */
+/* What goes in the zip's metadata.json, and what comes back out of it.
+
+   Three blocks, one per restore step: the drawn geometry, the form, and the
+   computed route. Kept apart rather than folded into the request payload the
+   worker takes, because that payload is shaped for the solver - the shape
+   converted, the hours turned into minutes - and reversing those conversions
+   on the way back in is a second chance to get them wrong. These are the
+   values the page itself holds.
+
+   `format` is checked on load and refused if unknown. Without it, a later
+   change to any of this would half-load into a page that looks right and
+   is not. */
+const METADATA_FORMAT = 1;
+
+function routeMetadata(res) {
+  return {
+    format: METADATA_FORMAT,
+    generator: 'Routile',
+    saved: new Date().toISOString(),
+    // Not enforced on load - a route computed by an older algorithm still
+    // draws exactly as it drew then. Recorded so a puzzling old file can be
+    // placed.
+    algoVersion: config.ALGO_VERSION,
+    view: {
+      regions: state.regions,
+      start: state.startLatLng
+        ? { lat: state.startLatLng.lat, lon: state.startLatLng.lng }
+        : null,
+    },
+    form: {
+      bothDirections: bothDirections(),
+      includePrivate: includePrivate(),
+      passes: passesValue() || 1,
+      splitSessions: sessionEnabled(),
+      sessionHours: sessionHours() || NO_SPLIT_HOURS,
+    },
+    result: res,
+  };
+}
+
+/* Enough of a check that a wrong or damaged file is refused with a sentence
+   rather than half-applied. Not a schema: this reads files this page wrote,
+   so the job is catching the honest mistakes - the wrong zip, a truncated
+   download, a hand-edited number - not defending against a hostile one. */
+function checkMetadata(meta) {
+  if (!meta || typeof meta !== 'object') throw new Error('metadata.json is not readable.');
+  if (meta.format !== METADATA_FORMAT) {
+    throw new Error(`This file is in format ${meta.format ?? '?'}, and this `
+      + `version of Routile reads format ${METADATA_FORMAT}.`);
+  }
+  const res = meta.result;
+  if (!res || !Array.isArray(res.sessions) || !Array.isArray(res.track)) {
+    throw new Error('metadata.json has no route in it.');
+  }
+  if (!res.sessions.length || res.track.length < 2) {
+    throw new Error('The route in this file is empty.');
+  }
+  if (!Array.isArray(meta.view?.regions)) throw new Error('The drawn area is missing.');
+  return meta;
+}
+
+/* Put the page back as it was when the zip was made. Deliberately no compute:
+   the result travelled with the file, so this is instant, works offline, and
+   gives exactly the route that was downloaded rather than what the same
+   request would produce from today's map data. */
+function restoreRoute(meta) {
+  const { view, form, result } = meta;
+
+  clearRoute();
+  state.regions = view.regions;
+  drawRegions();
+
+  if (view.start) setStart(L.latLng(view.start.lat, view.start.lon));
+  else clearStart();
+
+  $(form.bothDirections ? 'dir-both' : 'dir-oneway').checked = true;
+  $('private-roads').checked = !!form.includePrivate;
+  // Clamped rather than trusted: a hand-edited file should not put the form
+  // into a state its own validation would reject.
+  $('passes').value = String(
+    Math.min(Math.max(Math.round(form.passes) || 1, 1), config.PASSES_MAX));
+  $('session-enabled').checked = !!form.splitSessions;
+  const hours = Number(form.sessionHours);
+  if (Number.isFinite(hours) && hours >= 0.1 && hours <= NO_SPLIT_HOURS) {
+    $('session').value = String(hours);
+  }
+  syncSessionField();
+
+  syncZones();                 // area figure, and the Compute button
+  state.result = result;
+  renderResult(result);
+  drawSessions(result, result.track || []);
+  showError(null);
+  hideMapAlert();
+}
+
+/* The zip this page downloads, read back in. JSZip is already loaded for the
+   writing half, and it reads as happily as it writes. */
+async function loadRouteZip(file) {
+  if (!/\.zip$/i.test(file.name)) {
+    throw new Error(/\.gpx$/i.test(file.name)
+      ? 'A .gpx file holds the track but none of the settings behind it. '
+        + 'Drop the whole .zip instead.'
+      : 'That is not a Routile .zip.');
+  }
+  let zip;
+  try {
+    zip = await JSZip.loadAsync(file);
+  } catch (err) {
+    throw new Error('That file could not be opened as a zip.');
+  }
+  const entry = zip.file('metadata.json');
+  if (!entry) {
+    throw new Error('No metadata.json in this zip. Routile only started '
+      + 'writing one recently, so a route downloaded before that cannot be '
+      + 'loaded back.');
+  }
+  let meta;
+  try {
+    meta = JSON.parse(await entry.async('string'));
+  } catch (err) {
+    throw new Error('The metadata.json in this zip is damaged.');
+  }
+  restoreRoute(checkMetadata(meta));
+}
+
+const dropzone = $('dropzone');
+
+async function acceptFiles(files) {
+  const list = [...(files || [])];
+  if (!list.length) return;
+  // One route per zip, so a multiple selection takes the first zip in it
+  // rather than refusing outright.
+  const file = list.find((f) => /\.zip$/i.test(f.name)) || list[0];
+  dropzone.classList.add('busy');
+  try {
+    await loadRouteZip(file);
+  } catch (err) {
+    showMapAlert(err.message);
+  } finally {
+    dropzone.classList.remove('busy');
+  }
+}
+
+/* Refusing a file is the one failure worth interrupting for: you dropped
+   something and nothing happened, and a line at the foot of the panel is easy
+   to miss when you are looking at the map. It stays until dismissed. */
+function showMapAlert(msg) {
+  $('map-alert-text').textContent = msg;
+  $('map-alert').classList.remove('hidden');
+  $('map-alert-close').focus();
+}
+
+function hideMapAlert() { $('map-alert').classList.add('hidden'); }
+
+$('map-alert-close').addEventListener('click', hideMapAlert);
+document.addEventListener('keydown', (ev) => {
+  if (ev.key === 'Escape') hideMapAlert();
+});
+
+dropzone.addEventListener('click', () => $('load-file').click());
+dropzone.addEventListener('keydown', (ev) => {
+  if (ev.key === 'Enter' || ev.key === ' ') {
+    ev.preventDefault();
+    $('load-file').click();
+  }
+});
+$('load-file').addEventListener('change', (ev) => {
+  acceptFiles(ev.target.files);
+  ev.target.value = '';        // so the same file can be picked twice running
+});
+
+for (const type of ['dragenter', 'dragover']) {
+  dropzone.addEventListener(type, (ev) => {
+    ev.preventDefault();
+    ev.dataTransfer.dropEffect = 'copy';
+    dropzone.classList.add('over');
+  });
+}
+for (const type of ['dragleave', 'dragend']) {
+  dropzone.addEventListener(type, () => dropzone.classList.remove('over'));
+}
+dropzone.addEventListener('drop', (ev) => {
+  ev.preventDefault();
+  dropzone.classList.remove('over');
+  acceptFiles(ev.dataTransfer.files);
+});
+
+/* A file dropped anywhere else would otherwise be opened by the browser,
+   navigating away from a page that may have a route in it. */
+for (const type of ['dragover', 'drop']) {
+  window.addEventListener(type, (ev) => {
+    if (!dropzone.contains(ev.target)) ev.preventDefault();
+  });
+}
+
 /* ---------------------------------------------------------------- render */
 function renderResult(res) {
   $('stats-card').classList.remove('hidden');
@@ -921,7 +1118,7 @@ $('download').onclick = async () => {
       console.warn('map image skipped', err);
       return null;
     });
-    const blob = await gpxZip(res, { image });
+    const blob = await gpxZip(res, { image, metadata: routeMetadata(res) });
     saveBlob(blob, res.sessions.length > 1 ? 'routile-sessions.zip' : 'routile-route.zip');
   } catch (err) {
     showError(`Could not build the file: ${err.message}`);

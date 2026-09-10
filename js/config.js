@@ -1,4 +1,4 @@
-/* Tunable constants for Routile.
+﻿/* Tunable constants for Routile.
 
    Several values here are EMPIRICAL: they can only be calibrated by driving a
    generated route and watching what the navigation app actually does. */
@@ -32,14 +32,14 @@ export const CARTO_API_KEY = 'cb1_3fme_1_eb3991beb7b07217ee922ba3';
 export const BASEMAPS = [
   {
     id: 'osm',
-    label: 'OpenStreetMap',
+    label: 'OpenStreetMap (light)',
     url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
     maxZoom: 19,
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
   },
   {
     id: 'osm-dark',
-    label: 'OpenStreetMap dark',
+    label: 'OpenStreetMap (dark)',
     url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
     maxZoom: 19,
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
@@ -48,7 +48,7 @@ export const BASEMAPS = [
   },
   {
     id: 'carto-light',
-    label: 'CARTO Positron',
+    label: 'CARTO (light)',
     url: 'https://basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
     maxZoom: 20,
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> '
@@ -57,7 +57,7 @@ export const BASEMAPS = [
   },
   {
     id: 'carto-dark',
-    label: 'CARTO Dark Matter',
+    label: 'CARTO (dark)',
     url: 'https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
     maxZoom: 20,
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> '

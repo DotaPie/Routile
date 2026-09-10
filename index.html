@@ -94,6 +94,19 @@
       <p class="hint" id="download-note"></p>
     </section>
 
+    <!-- Reads back a zip this page produced: the metadata.json inside it holds
+         the settings, the drawn zones and the computed route together. -->
+    <div id="dropzone" class="dropzone" role="button" tabindex="0"
+         aria-label="Load a saved Routile zip">
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M12 15.5V4m0 0L8.2 7.8M12 4l3.8 3.8"/>
+        <path d="M4 14.5v3A2.5 2.5 0 0 0 6.5 20h11a2.5 2.5 0 0 0 2.5-2.5v-3"/>
+      </svg>
+      <span class="dropzone-title">Load a saved route</span>
+      <span class="dropzone-hint">Drop a Routile .zip here, or click to choose</span>
+    </div>
+    <input id="load-file" class="hidden" type="file" accept=".zip,application/zip">
+
   </aside>
 
   <main id="stage">
@@ -162,6 +175,18 @@
     </div>
 
     <div id="legend" class="legend hidden" role="list" aria-label="Sessions"></div>
+
+    <!-- Loading a file is a deliberate act with a deliberate answer, so when it
+         fails it says so over the map rather than in a line down the panel. -->
+    <div id="map-alert" class="map-alert hidden" role="alertdialog" aria-modal="false"
+         aria-labelledby="map-alert-text">
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M12 4.5 2.8 20h18.4L12 4.5z"/>
+        <path d="M12 10v4.2"/><circle cx="12" cy="17.2" r="0.9" fill="currentColor" stroke="none"/>
+      </svg>
+      <p id="map-alert-text"></p>
+      <button id="map-alert-close" type="button">Dismiss</button>
+    </div>
   </main>
 </div>
 

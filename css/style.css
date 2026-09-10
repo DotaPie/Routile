@@ -232,6 +232,82 @@ html, body {
 .tool:disabled { opacity: 0.38; cursor: default; }
 .tool:disabled:hover { background: transparent; color: var(--ink-2); }
 
+/* ------------------------------------------------------------ map alert */
+/* Centred on the map, red-bordered, and it stays until dismissed. Loading a
+   file is something you did on purpose, so the answer belongs where you are
+   looking rather than as one more line down the panel. Above the top bar's
+   z-index, or it would open underneath it. */
+.map-alert {
+  position: absolute;
+  z-index: 600;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  display: grid; justify-items: center; gap: 10px;
+  width: min(400px, calc(100% - 32px));
+  padding: 20px 22px;
+  text-align: center;
+  background: var(--glass);
+  backdrop-filter: blur(8px);
+  border: 1.5px solid var(--bad); border-radius: 12px;
+  box-shadow: var(--shadow-lg);
+}
+.map-alert svg {
+  width: 26px; height: 26px;
+  color: var(--bad);
+  fill: none; stroke: currentColor; stroke-width: 1.7;
+  stroke-linecap: round; stroke-linejoin: round;
+}
+.map-alert p {
+  margin: 0;
+  font-size: 13px; line-height: 1.5;
+  color: var(--bad);
+}
+.map-alert button {
+  font: inherit; font-size: 12.5px; font-weight: 560;
+  color: var(--bad);
+  background: var(--bad-soft);
+  border: 1px solid var(--bad-line); border-radius: 8px;
+  padding: 6px 14px;
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+.map-alert button:hover { background: var(--bad-line); }
+.map-alert button:focus-visible { outline: 2px solid var(--bad); outline-offset: 2px; }
+
+/* -------------------------------------------------------------- dropzone */
+/* Last thing in the panel, below the download it is the mirror of. Dashed
+   rather than solid, which is the one border convention that reads as "put
+   something here" rather than "press me", and the whole rectangle is the
+   target - a small button would be a poor thing to aim a dragged file at. */
+.dropzone {
+  display: grid; justify-items: center; gap: 2px;
+  margin-top: 18px; padding: 18px 14px;
+  text-align: center;
+  color: var(--ink-3);
+  background: transparent;
+  border: 1px dashed var(--line-2); border-radius: var(--r);
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+}
+.dropzone:hover { background: var(--panel-2); border-color: var(--ink-3); }
+.dropzone:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* Held over the target: the accent, so it is unmistakable which of the two
+   panels the file is about to land in. */
+.dropzone.over {
+  background: var(--accent-soft);
+  border-color: var(--accent); border-style: solid;
+  color: var(--accent);
+}
+.dropzone svg {
+  width: 20px; height: 20px; margin-bottom: 2px;
+  fill: none; stroke: currentColor; stroke-width: 1.7;
+  stroke-linecap: round; stroke-linejoin: round;
+}
+.dropzone-title { font-size: 13px; font-weight: 560; color: var(--ink-2); }
+.dropzone.over .dropzone-title { color: var(--accent); }
+.dropzone-hint { font-size: 11.5px; }
+.dropzone.busy { opacity: 0.6; cursor: progress; }
+
 /* ------------------------------------------------------------- start pin */
 .start-pin svg {
   width: 60px; height: 60px;
