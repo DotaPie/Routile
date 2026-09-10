@@ -7,6 +7,26 @@
 // and you will chase phantom bugs.
 export const ALGO_VERSION = '9';
 
+// -------------------------------------------------------------------- basemap
+// Throw away key for this project - an actual human comment
+export const CARTO_API_KEY = 'cb1_3fme_1_eb3991beb7b07217ee922ba3';
+
+/* 'rastertiles/voyager' is Voyager, a full-colour general-purpose road map.
+   'light_all' is Positron, far paler and quieter - worth a try if the route
+   lines ever have to fight the basemap for attention; 'dark_all' is Dark
+   Matter. CARTO is retiring raster in favour of vector, so treat this as a
+   comfortable stopgap rather than a permanent address. */
+export const CARTO_STYLE = 'rastertiles/voyager';
+
+/* Route colours, cycled per session. Violet first: OSM paints primary roads
+   orange and trunk roads salmon, so an orange route is easy to mistake for the
+   map's own road colouring. No green, since the drawn zone's outline is green.
+
+   Mixed for a pale basemap, which is what both the screen and the exported
+   picture now are - one palette, so the PNG matches what you drew it from. */
+export const ROUTE_PALETTE = ['#7c3aed', '#0284c7', '#c026d3', '#ea580c', '#e11d48',
+                              '#4f46e5', '#ca8a04', '#be123c', '#0369a1', '#a21caf'];
+
 // ---------------------------------------------------------------- area limits
 // No product-level cap: draw whatever you like. This ceiling is deliberately far
 // larger than any country-sized rectangle anyone would drag by hand, and exists

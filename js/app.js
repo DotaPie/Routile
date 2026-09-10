@@ -2,6 +2,7 @@
 
 import * as config from './config.js';
 import { Area } from './area.js';
+import { DetailLayer } from './detail.js';
 import { gpxZip } from './gpx.js';
 import { mapSnapshot } from './snapshot.js';
 
@@ -10,17 +11,9 @@ const $ = (id) => document.getElementById(id);
 // The three ways to draw. Each one is a full drag gesture: press, move, release.
 const SHAPES = ['rect', 'circle', 'freehand'];
 
-/* The route palette, drawn for the dark basemap. Bright, and no green: green
-   is the accent the drawn zones wear, and a session line the same colour as
-   the zone outline reads as part of it.
-
-   The dark basemap is the standard OSM tile inverted in CSS - see the filter
-   on .leaflet-tile-pane. Every keyless dark tile service worth using has since
-   grown an API key, and one basemap that needs no account is worth more here
-   than a perfectly hand-styled one that does. The exported picture is the
-   other way up, on the paper tile, and carries its own palette in snapshot.js. */
-const SESSION_COLORS = ['#a78bfa', '#22d3ee', '#f472b6', '#fb923c', '#facc15',
-                        '#f87171', '#60a5fa', '#e879f9', '#38bdf8', '#fda4af'];
+/* One palette for the screen and for the exported picture, now that both are
+   drawn on a pale map. See ROUTE_PALETTE in config.js for how it was chosen. */
+const SESSION_COLORS = config.ROUTE_PALETTE;
 
 const sessionColor = (i) => SESSION_COLORS[i % SESSION_COLORS.length];
 
@@ -41,9 +34,7 @@ const state = {
   startMarker: null,
   routeLayers: [],     // one polyline per session, index-aligned with the legend
   sessionPoints: [],   // the offset points behind each of those polylines
-  arrowsBySession: [],
-  arrowLayer: null,
-  pointLayer: null,
+  detail: null,        // the canvas of arrows and waypoint dots
   hovered: null,       // previewed by the pointer
   pinned: null,        // clicked, and stays until dismissed
   mode: 'rect',        // rect | circle | freehand | pan | pin
@@ -81,10 +72,10 @@ const cssVar = (name) =>
 // Left interactive it would take the pointer cursor and swallow hovers while
 // you are trying to draw the next zone on top of it.
 const AREA_STYLE = () => ({
-  color: cssVar('--accent'), weight: 2, fillOpacity: 0.08, interactive: false,
+  color: cssVar('--zone'), weight: 2, fillOpacity: 0.08, interactive: false,
 });
 const DRAFT_STYLE = () => ({
-  color: cssVar('--accent'), weight: 2, fillOpacity: 0.1, dashArray: '5,4',
+  color: cssVar('--zone'), weight: 2, fillOpacity: 0.1, dashArray: '5,4',
   interactive: false,
 });
 
@@ -111,11 +102,15 @@ for (const type of ['keydown', 'keyup', 'keypress']) {
   L.DomEvent.on($('search-input'), type, L.DomEvent.stopPropagation);
 }
 
-// Arrows and waypoint dots are rebuilt for the visible area on every pan and
-// zoom, so their cost is set by the screen rather than by the route's length.
-state.arrowLayer = L.layerGroup().addTo(map);
-state.pointLayer = L.layerGroup().addTo(map);
-map.on('moveend zoomend', () => refreshDetail());
+// Arrows and waypoint dots, on their own canvas. The layer redraws itself for
+// the visible area as the map moves, so their cost is set by the screen rather
+// than by the route's length.
+state.detail = new DetailLayer({
+  arrowZoom: ARROW_ZOOM,
+  pointZoom: POINT_ZOOM,
+  halo: cssVar('--map-bg'),
+  dot: cssVar('--map-ink'),
+}).addTo(map);
 
 // The map shares the stage with the top bar and the session list, and once
 // those dock they take real height from it. Laid out first, then Leaflet is
@@ -125,12 +120,31 @@ new ResizeObserver(() => {
   map.invalidateSize({ animate: false });
 }).observe($('stage'));
 
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+/* CARTO's pale basemap where a key is configured, OpenStreetMap's own tiles
+   where it is not - see CARTO_API_KEY in config.js, which is where the key
+   goes. Attribution is a licence condition for both and is set accordingly.
+
+   {r} is Leaflet's retina placeholder: '@2x' on a hidpi screen and empty
+   elsewhere, so a sharp screen gets sharp tiles for the same one request per
+   tile. OSM serves no @2x, hence only CARTO's URL carries it. */
+const basemap = config.CARTO_API_KEY ? {
+  url: `https://basemaps.cartocdn.com/${config.CARTO_STYLE}/{z}/{x}/{y}{r}.png`
+     + `?key=${encodeURIComponent(config.CARTO_API_KEY)}`,
+  maxZoom: 20,
+  attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> '
+             + 'contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+} : {
+  url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
   maxZoom: 19,
-  // Fetched with CORS, so the same cached tiles may be drawn onto the canvas
-  // behind the exported map image. OSM's tile servers allow any origin.
-  crossOrigin: 'anonymous',
   attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+};
+
+L.tileLayer(basemap.url, {
+  maxZoom: basemap.maxZoom,
+  // Fetched with CORS, so the same cached tiles may be drawn onto the canvas
+  // behind the exported map image. Both tile servers allow any origin.
+  crossOrigin: 'anonymous',
+  attribution: basemap.attribution,
 }).addTo(map);
 
 /* -------------------------------------------------------------- drawing */
@@ -196,7 +210,7 @@ mapEl.addEventListener('pointerdown', (ev) => {
     // with a straight line from wherever you happened to stop, which is how a
     // careful outline ends up with a spike across the map.
     drag.ring = L.circleMarker(at, {
-      radius: SNAP_PX, color: cssVar('--accent'), weight: 1.5,
+      radius: SNAP_PX, color: cssVar('--zone'), weight: 1.5,
       dashArray: '4,3', fillOpacity: 0.06, interactive: false,
     }).addTo(map);
   }
@@ -923,6 +937,7 @@ function metresBetween(a, b) {
 function drawSessions(res, track) {
   clearRouteLayers();
   const sessions = res.sessions;
+  const arrows = [];
 
   sessions.forEach((session, i) => {
     const raw = sessionSlice(res, track, session) || [];
@@ -938,10 +953,16 @@ function drawSessions(res, track) {
     }).addTo(map);
     state.routeLayers[i] = line;
     state.sessionPoints[i] = points;
+    arrows[i] = arrowsAlong(points);
+  });
+
+  state.detail.setRoute({
+    arrows,
+    colors: sessions.map((_, i) => sessionColor(i)),
+    dots: res.waypoints || [],
   });
 
   buildLegend(sessions);
-  refreshDetail();
 
   const drawn = state.routeLayers.filter(Boolean);
   if (drawn.length) {
@@ -952,67 +973,24 @@ function drawSessions(res, track) {
   }
 }
 
-/* Arrows and waypoint dots, drawn only for what is on screen and only once the
-   map is zoomed in far enough for them to mean anything. A 500 km route has
-   thousands of each; rebuilding just the visible ones keeps that irrelevant. */
-function refreshDetail() {
-  state.arrowLayer.clearLayers();
-  state.pointLayer.clearLayers();
-  state.arrowsBySession = [];
-  if (!state.routeLayers.length) return;
+/* Every arrow a session will ever need, worked out once when its line is
+   drawn: one every ARROW_SPACING_M along the leg, with the heading to draw it
+   at. Which of them are on screen is then a bounds test each.
 
-  const zoom = map.getZoom();
-  const bounds = map.getBounds().pad(0.15);
-
-  if (zoom >= ARROW_ZOOM) {
-    state.sessionPoints.forEach((points, i) => {
-      if (!points) return;
-      const mine = [];
-      let since = ARROW_SPACING_M;      // one arrow at the very start
-      for (let n = 1; n < points.length; n++) {
-        since += metresBetween(points[n - 1], points[n]);
-        if (since < ARROW_SPACING_M) continue;
-        since = 0;
-        if (!bounds.contains(points[n])) continue;
-        mine.push(arrowAt(points, n, sessionColor(i)));
-      }
-      state.arrowsBySession[i] = mine;
-    });
+   This used to be done per pan, walking every point of the route to re-measure
+   the spacing - which on a 400 km route is hundreds of thousands of distance
+   calculations before a single mark reaches the screen, on every gesture. The
+   spacing does not depend on the viewport, so it never needed redoing. */
+function arrowsAlong(points) {
+  const out = [];
+  let since = ARROW_SPACING_M;      // so the first one lands at the very start
+  for (let n = 1; n < points.length; n++) {
+    since += metresBetween(points[n - 1], points[n]);
+    if (since < ARROW_SPACING_M) continue;
+    since = 0;
+    out.push({ lat: points[n][0], lon: points[n][1], deg: bearingAt(points, n) });
   }
-
-  if (zoom >= POINT_ZOOM && state.result) {
-    // Ringed in the map's own background rather than in white, so the dots
-    // stay legible on a dark basemap as well as a pale one.
-    const ring = cssVar('--map-bg');
-    const fill = cssVar('--ink');
-    for (const wp of state.result.waypoints || []) {
-      if (!bounds.contains([wp.lat, wp.lon])) continue;
-      L.circleMarker([wp.lat, wp.lon], {
-        radius: 3.5, weight: 1.5, color: ring, fillColor: fill,
-        fillOpacity: 0.9, interactive: false,
-      }).addTo(state.pointLayer);
-    }
-  }
-  applyHighlight(state.hovered !== null ? state.hovered : state.pinned);
-}
-
-function arrowAt(points, n, color) {
-  const marker = L.marker(points[n], {
-    interactive: false,
-    keyboard: false,
-    icon: L.divIcon({
-      className: 'route-arrow',
-      iconSize: [14, 14],
-      iconAnchor: [7, 7],
-      // The rotation goes on an inner element: Leaflet owns the marker's own
-      // transform for positioning and would overwrite it.
-      html: `<i style="transform:rotate(${bearingAt(points, n) - 90}deg);color:${color}">`
-          + '<svg viewBox="0 0 14 14" aria-hidden="true">'
-          + '<path d="M3 7h7M7.5 4l3 3-3 3"/></svg></i>',
-    }),
-  });
-  marker.addTo(state.arrowLayer);
-  return marker;
+  return out;
 }
 
 function buildLegend(sessions) {
@@ -1116,13 +1094,7 @@ function applyHighlight(index, { scroll = true } = {}) {
     if (i === index) line.bringToFront();
   });
 
-  state.arrowsBySession.forEach((arrows, i) => {
-    if (!arrows) return;
-    const hidden = index !== null && i !== index;
-    for (const marker of arrows) {
-      if (marker._icon) marker._icon.style.opacity = hidden ? '0' : '1';
-    }
-  });
+  state.detail.setHighlight(index);
 
   for (const item of $('legend').querySelectorAll('.legend-item')) {
     const hot = Number(item.dataset.session) === index;
@@ -1145,9 +1117,7 @@ function clearRouteLayers() {
   }
   state.routeLayers = [];
   state.sessionPoints = [];
-  state.arrowsBySession = [];
-  state.arrowLayer.clearLayers();
-  state.pointLayer.clearLayers();
+  state.detail.clear();
   state.pinned = null;
   state.hovered = null;
 }

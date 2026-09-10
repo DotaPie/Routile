@@ -5,12 +5,15 @@
    a legend and the attribution. It is framed on the route rather than on
    whatever the screen happens to show, at the largest zoom that fits.
 
-   The page itself is dark, but this is the paper-white tile: a file in a zip
-   is a document, opened later in a file browser and quite possibly printed,
-   where ink on white is what works. The page's dark map is a CSS filter, and
-   the canvas equivalent is not available in every browser anyway. So the
-   picture carries its own palette and its own deeper green, chosen to read on
-   pale paper rather than on the screen's ink. */
+   Paper white, like the page's own map: a file in a zip is a document, opened
+   later in a file browser and quite possibly printed, where ink on white is
+   what works. It fetches its own tiles rather than reusing the page's, because
+   it is framed on the route rather than on the viewport. Those stay on
+   OpenStreetMap even when the page is on CARTO: an export pulls a whole framed
+   area at once, and there is no reason to spend a metered basemap's quota on
+   it when the free one draws the same paper map. */
+
+import { ROUTE_PALETTE } from './config.js';
 
 const TILE = 256;
 const tileUrl = (z, x, y) =>
@@ -41,11 +44,9 @@ const SEA = '#e7ebef';
 const PIN_PATH = 'M12 21s6.5-6.2 6.5-11a6.5 6.5 0 1 0-13 0C5.5 14.8 12 21 12 21z';
 const FONT = '-apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, Roboto, sans-serif';
 
-/* Violet first: OSM Carto paints primary roads orange and trunk roads salmon,
-   so an orange route is easy to mistake for the map's own road colouring. No
-   green, since the zone outline is green. */
-const PAPER_PALETTE = ['#7c3aed', '#0284c7', '#c026d3', '#ea580c', '#e11d48',
-                       '#4f46e5', '#ca8a04', '#be123c', '#0369a1', '#a21caf'];
+// The screen draws on a pale basemap too, so the picture and the map it came
+// from share one palette. See ROUTE_PALETTE in config.js.
+const PAPER_PALETTE = ROUTE_PALETTE;
 
 /* sessions: [{ points: [[lat, lon], ...], label, meta }], one per session.
    regions:  the drawn area as a MultiPolygon in [lon, lat].
