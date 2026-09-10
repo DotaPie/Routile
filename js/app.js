@@ -1394,19 +1394,47 @@ phoneLayout.addEventListener('change', () => layoutOverlays());
 function layoutOverlays() {
   const stage = $('stage');
   const root = document.documentElement;
-  stage.classList.remove('tools-tight', 'tools-left');
+  stage.classList.remove('tools-tight', 'tools-left', 'tools-above');
   root.classList.remove('app-stacked');
+  putToolsInBar();
 
   // Below the breakpoint the stacked shape is simply the right one, whatever
   // the bar would or would not fit into.
   if (phoneLayout.matches) {
     stage.classList.add('tools-tight', 'tools-left');
     root.classList.add('app-stacked');
-    return;
+  } else {
+    if (barIsCrowded()) stage.classList.add('tools-tight');
+    if (barIsCrowded()) stage.classList.add('tools-left');
+    if (barIsCrowded()) root.classList.add('app-stacked');
   }
-  if (barIsCrowded()) stage.classList.add('tools-tight');
-  if (barIsCrowded()) stage.classList.add('tools-left');
-  if (barIsCrowded()) root.classList.add('app-stacked');
+
+  /* Last resort, and only ever reachable once stacked: the bar is clamped to
+     the stage by then, so anything still not fitting overflows rather than
+     shrinking - the search box has a floor and will not give up any more
+     width. The tools step out above the map. */
+  if (barOverflows()) {
+    stage.classList.add('tools-above');
+    stage.insertBefore($('toolbar'), $('map'));
+    // The floating bar and the sessions are positioned against the stage, and
+    // the stage now opens with the strip; this is what they clear it by.
+    stage.style.setProperty('--tools-strip', `${$('toolbar').offsetHeight}px`);
+  }
+}
+
+/* The tools' home is the first thing in the floating bar. Put back before
+   every measurement, so what is measured is always the bar entire. */
+function putToolsInBar() {
+  const bar = $('topbar');
+  if ($('toolbar').parentElement !== bar) bar.insertBefore($('toolbar'), bar.firstChild);
+  $('stage').style.removeProperty('--tools-strip');
+}
+
+/* True only of a bar that has been clamped and still wants more room. A
+   floating bar is sized to its own content and cannot overflow itself. */
+function barOverflows() {
+  const bar = $('topbar');
+  return bar.scrollWidth > bar.clientWidth + 1;
 }
 
 /* Does the bar, at the width and place it currently has, still clear both

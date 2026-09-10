@@ -198,13 +198,13 @@ html, body {
 .basemap-chevron { width: 14px; height: 14px; color: var(--ink-3); }
 [aria-expanded="true"] .basemap-chevron { transform: rotate(180deg); }
 
-/* Hangs below the bar, right-aligned to it, and wide enough for the longest
-   name rather than sized to the button - a list that narrower than its rows
-   is what made the native one look pinched. */
+/* Hangs below the bar and wide enough for the longest name rather than sized
+   to the button - a list narrower than its rows is what made the native one
+   look pinched. Anchored left, since the picker sits mid-bar now. */
 .basemap-list {
   position: absolute;
   z-index: 20;
-  top: calc(100% + 9px); right: 0;
+  top: calc(100% + 9px); left: 0;
   min-width: max-content;
   margin: 0; padding: 4px;
   list-style: none;
@@ -346,6 +346,27 @@ html, body {
 .dropzone.over .dropzone-title { color: var(--accent); }
 .dropzone-hint { font-size: 11.5px; }
 .dropzone.busy { opacity: 0.6; cursor: progress; }
+
+/* ------------------------------------------------------------ repo link */
+/* Last thing in the panel, under a hairline: a credit, not a control, so it
+   sits at the quietest ink until you point at it. The mark is a filled path
+   rather than the stroked line icons used elsewhere - it is GitHub's own. */
+.repo-link {
+  display: flex; align-items: center; gap: 8px;
+  margin-top: 26px; padding-top: 16px;
+  border-top: 1px solid var(--line);
+  font-size: 12.5px; font-weight: 520;
+  color: var(--ink-3); text-decoration: none;
+  transition: color 0.12s ease;
+}
+.repo-link:hover { color: var(--accent); }
+.repo-link:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 4px;
+}
+.repo-link svg {
+  width: 16px; height: 16px; flex: 0 0 auto;
+  fill: currentColor; stroke: none;
+}
 
 /* ------------------------------------------------------------- start pin */
 .start-pin svg {
@@ -668,11 +689,54 @@ html, body {
   transform: none;
 }
 .app-stacked .search { flex: 1 1 60px; }
-.app-stacked .search input { width: auto; flex: 1 1 40px; min-width: 0; }
+/* A floor of roughly four compact buttons. Past that the field stops being a
+   field - it is the point where "Search a place" no longer fits its own
+   placeholder - so the bar overflows instead, and that overflow is the signal
+   layoutOverlays() reads to move the tools out of the way. */
+.app-stacked .search input { width: auto; flex: 1 1 auto; min-width: 150px; }
 
 /* The bar now spans the width, so the sessions cannot share the top line with
    it the way they do beside a centred bar - they go under it instead. */
 .app-stacked .legend {
   top: 66px;
   max-height: calc(100% - 80px);
+}
+
+/* ------------------------------------------------ the tools step outside */
+/* Narrower still, and the bar cannot hold the tools, the picker and a usable
+   search box at once. The tools are the part that does not need to be over
+   the map - you aim them at the map, you do not read them against it - so
+   they take a strip of their own above it and hand the whole floating bar to
+   the search and the picker.
+
+   The strip is the same #toolbar, moved in the DOM to sit before #map in the
+   stage's flex column - see layoutOverlays(), which moves it back when the
+   window grows. A CSS `order` could not do it: the toolbar is a child of the
+   bar, not a sibling of the map. */
+#stage.tools-above #toolbar {
+  /* A flex item in the stage's column now, and the map below it is greedy -
+     without this the strip is squeezed to a sliver. */
+  flex: 0 0 auto;
+  justify-content: center;
+  padding: 5px 8px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+}
+#stage.tools-above #basemap-sep { display: none; }
+/* The bar it left behind is narrower, so it can sit back in the middle - but
+   it is still positioned against the stage, and the stage now starts with the
+   strip. Both it and the sessions clear that: --tools-strip is the strip's
+   measured height, written by layoutOverlays() so the numbers cannot rot if
+   the buttons ever change size. */
+#stage.tools-above #topbar {
+  top: calc(var(--tools-strip, 44px) + 14px);
+  left: 50%; right: auto;
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: calc(100% - 20px);
+}
+#stage.tools-above .basemap { padding-left: 4px; }
+#stage.tools-above .legend {
+  top: calc(var(--tools-strip, 44px) + 66px);
+  max-height: calc(100% - var(--tools-strip, 44px) - 80px);
 }

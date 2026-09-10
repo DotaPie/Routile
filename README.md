@@ -8,7 +8,7 @@
 
 <p align="center"><strong>🔗 <a href="https://routile.com">https://routile.com</a></strong></p>
 
-It started as a small tool I needed myself, to systematically scan the roads of a given area. It's a static web page, nothing more: no backend, no build step, no API keys. Road data comes straight from OpenStreetMap via the Overpass API, and all the routing happens right in your browser.
+It started as a small tool I needed myself, to systematically scan the roads of a given area. It's a static web page, nothing more: no backend and no build step. Road data comes straight from OpenStreetMap via the Overpass API, and all the routing happens right in your browser.
 
 ## How to use
 
@@ -21,9 +21,19 @@ It started as a small tool I needed myself, to systematically scan the roads of 
 The download is always a `.zip`, containing:
 
 - **`routile-route.gpx`**, the whole drive as one file — or **`routile-session-01.gpx`, `-02.gpx`, …** if you split it into sessions
-- **`map.png`**, a picture of the route on the map, start pin included
+- **`metadata.json`**, everything the page would need to show you this route again
 
 Use for example OsmAnd [![Android](https://img.shields.io/badge/-3DDC84?logo=android&logoColor=white)](https://play.google.com/store/apps/details?id=net.osmand) [![iOS](https://img.shields.io/badge/-0D96F6?logo=apple&logoColor=white)](https://apps.apple.com/app/osmand-maps-travel-navigate/id934850257) to navigate with GPX file.
+
+## Opening a route again
+
+Drop a downloaded `.zip` onto the panel at the top left, or click it to pick the file. The zones, the start pin, every setting and the route itself come straight back — the whole thing is read out of `metadata.json`, so nothing is downloaded and nothing is recomputed. A GPX file on its own carries the track but none of the settings behind it, which is what that extra file is for.
+
+## Basemaps
+
+Four, from the picker on the map's toolbar: OpenStreetMap light and dark, and CARTO light and dark. OpenStreetMap is the detailed one — it draws parking, shops and the rest — and its dark version is the same tiles inverted, so nothing is lost. CARTO's two are cleaner but deliberately show far less.
+
+The CARTO pair needs a free API key, set as `CARTO_API_KEY` in [`js/config.js`](js/config.js); the key is tied to the domain you request it for. Leave it empty and the picker just offers the two OpenStreetMap maps.
 
 ---
 
