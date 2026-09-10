@@ -11,20 +11,29 @@ export const ALGO_VERSION = '9';
 // Throw away key for this project - an actual human comment
 export const CARTO_API_KEY = 'cb1_3fme_1_eb3991beb7b07217ee922ba3';
 
-/* 'rastertiles/voyager' is Voyager, a full-colour general-purpose road map.
-   'light_all' is Positron, far paler and quieter - worth a try if the route
-   lines ever have to fight the basemap for attention; 'dark_all' is Dark
-   Matter. CARTO is retiring raster in favour of vector, so treat this as a
-   comfortable stopgap rather than a permanent address. */
-export const CARTO_STYLE = 'rastertiles/voyager';
+/* 'dark_all' is Dark Matter, a basemap actually drawn dark - unlike the
+   inverted daylight tiles this replaced, where the hue rotation left roads and
+   parks looking like a photo negative. 'light_all' is Positron and
+   'rastertiles/voyager' is Voyager; both are pale backdrop styles, deliberately
+   drained of colour, so neither is the "normal bright map" it sounds like.
+   CARTO is retiring raster in favour of vector, so treat this as a comfortable
+   stopgap rather than a permanent address. */
+export const CARTO_STYLE = 'dark_all';
 
-/* Route colours, cycled per session. Violet first: OSM paints primary roads
-   orange and trunk roads salmon, so an orange route is easy to mistake for the
-   map's own road colouring. No green, since the drawn zone's outline is green.
+/* Two palettes, because the route is drawn on two very different grounds.
 
-   Mixed for a pale basemap, which is what both the screen and the exported
-   picture now are - one palette, so the PNG matches what you drew it from. */
-export const ROUTE_PALETTE = ['#7c3aed', '#0284c7', '#c026d3', '#ea580c', '#e11d48',
+   Both avoid green, which the drawn zone's outline wears, and both lead with
+   violet rather than orange: road maps paint primary roads orange and trunk
+   roads salmon, so an orange route is easy to mistake for the map's own
+   colouring. */
+
+// On screen, over the dark basemap: bright, saturated, glowing.
+export const ROUTE_PALETTE = ['#a78bfa', '#22d3ee', '#f472b6', '#fb923c', '#facc15',
+                              '#f87171', '#60a5fa', '#e879f9', '#38bdf8', '#fda4af'];
+
+// In the exported PNG, which is paper white and may well be printed: the same
+// hues taken darker, so they read as ink rather than as highlighter.
+export const PAPER_PALETTE = ['#7c3aed', '#0284c7', '#c026d3', '#ea580c', '#e11d48',
                               '#4f46e5', '#ca8a04', '#be123c', '#0369a1', '#a21caf'];
 
 // ---------------------------------------------------------------- area limits

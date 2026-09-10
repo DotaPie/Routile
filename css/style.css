@@ -1,9 +1,8 @@
-/* A dark UI around a pale map. Every colour is a variable, so nothing
+/* One theme: dark, panel and map alike. Every colour is a variable, so nothing
    downstream hardcodes a shade and a second theme would be a matter of
-   redefining these. The panel stays dark because the brand green reads well on
-   ink and washes out on white; the map is pale because a road map is, and
-   because the exported picture always was - see --map-bg below for the inks
-   the map's own marks are drawn with. */
+   redefining these. The light theme was dropped because the brand green, which
+   reads well on ink, washes out on white - the one place it still has to is
+   the exported PNG, which carries its own palette in snapshot.js. */
 :root {
   color-scheme: dark;
   --bg: #0f1316;
@@ -26,18 +25,17 @@
   --bad: #ff7368;
   --bad-soft: #2c1917;
   --bad-line: #4d2724;
-  /* The map is the one pale surface in a dark UI, so the things drawn on it
-     need their own inks rather than the panel's. --map-bg doubles as the
-     colour behind the tiles and as the halo the arrows and waypoint dots are
-     drawn in, which is why it is the basemap's own paper white. The zone green
-     is deeper than the brand --accent, which is mixed for a dark background
-     and washes out on white; snapshot.js draws the exported picture with the
-     same one. */
-  --map-bg: #f4f6f8;
-  --map-ink: #10151c;
-  --zone: #0b8f68;
+  /* The map's own colours, kept apart from the panel's even though both are
+     dark: the basemap is CARTO Dark Matter, not this stylesheet, so what is
+     drawn over it answers to the tiles rather than to the UI. --map-bg is the
+     colour behind the tiles and, doing double duty, the halo the arrows and
+     waypoint dots are ringed in; --map-ink is what those dots are filled with,
+     light because the ground under them is dark. */
+  --map-bg: #0b0f12;
+  --map-ink: #e8eef2;
+  --zone: #35d29a;
   --glass: rgba(23, 28, 33, 0.93);
-  --pin-ring: #ffffff;
+  --pin-ring: #0b1a15;
   --r: 10px;
   --r-sm: 7px;
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.35), 0 4px 12px rgba(0, 0, 0, 0.30);
@@ -350,7 +348,7 @@ html, body {
    obvious that the next click drops it rather than selects something. */
 #map.pinning,
 #map.pinning .leaflet-interactive {
-  cursor: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='34'%20height='34'%20viewBox='0%200%2024%2024'%3E%3Cpath%20d='M12%2021s6.5-6.2%206.5-11a6.5%206.5%200%201%200-13%200C5.5%2014.8%2012%2021%2012%2021z'%20fill='%230b8f68'%20stroke='%23ffffff'%20stroke-width='1.5'/%3E%3Ccircle%20cx='12'%20cy='10'%20r='2.6'%20fill='%23ffffff'/%3E%3C/svg%3E") 17 30, crosshair;
+  cursor: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='34'%20height='34'%20viewBox='0%200%2024%2024'%3E%3Cpath%20d='M12%2021s6.5-6.2%206.5-11a6.5%206.5%200%201%200-13%200C5.5%2014.8%2012%2021%2012%2021z'%20fill='%2335d29a'%20stroke='%230b1a15'%20stroke-width='1.5'/%3E%3Ccircle%20cx='12'%20cy='10'%20r='2.6'%20fill='%230b1a15'/%3E%3C/svg%3E") 17 30, crosshair;
 }
 /* Held middle or right mouse button: a temporary grab, whatever tool is armed. */
 #map.grabbing,

@@ -5,15 +5,18 @@
    a legend and the attribution. It is framed on the route rather than on
    whatever the screen happens to show, at the largest zoom that fits.
 
-   Paper white, like the page's own map: a file in a zip is a document, opened
-   later in a file browser and quite possibly printed, where ink on white is
-   what works. It fetches its own tiles rather than reusing the page's, because
-   it is framed on the route rather than on the viewport. Those stay on
+   The page's map is dark; this one is paper white. A file in a zip is a
+   document, opened later in a file browser and quite possibly printed, where
+   ink on white is what works - so the picture carries its own palette and its
+   own deeper green, mixed to read on paper rather than on the screen's ink.
+
+   It fetches its own tiles rather than reusing the page's, because it is
+   framed on the route rather than on the viewport. Those stay on
    OpenStreetMap even when the page is on CARTO: an export pulls a whole framed
    area at once, and there is no reason to spend a metered basemap's quota on
    it when the free one draws the same paper map. */
 
-import { ROUTE_PALETTE } from './config.js';
+import { PAPER_PALETTE } from './config.js';
 
 const TILE = 256;
 const tileUrl = (z, x, y) =>
@@ -44,9 +47,8 @@ const SEA = '#e7ebef';
 const PIN_PATH = 'M12 21s6.5-6.2 6.5-11a6.5 6.5 0 1 0-13 0C5.5 14.8 12 21 12 21z';
 const FONT = '-apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, Roboto, sans-serif';
 
-// The screen draws on a pale basemap too, so the picture and the map it came
-// from share one palette. See ROUTE_PALETTE in config.js.
-const PAPER_PALETTE = ROUTE_PALETTE;
+// Deliberately not the screen's palette: see the two of them side by side in
+// config.js for why paper needs the darker one.
 
 /* sessions: [{ points: [[lat, lon], ...], label, meta }], one per session.
    regions:  the drawn area as a MultiPolygon in [lon, lat].
