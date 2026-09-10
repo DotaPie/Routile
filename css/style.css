@@ -78,7 +78,9 @@ html, body {
   overflow-y: auto;
   background: var(--panel);
   border-right: 1px solid var(--line);
-  padding: 22px 22px 32px;
+  /* Little at the foot: the last thing in the column is the repo link, which
+     sits right down on the bottom edge rather than floating above a margin. */
+  padding: 22px 22px 12px;
 }
 #panel > * { flex: 0 0 auto; }
 
