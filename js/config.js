@@ -11,24 +11,65 @@ export const ALGO_VERSION = '9';
 // Throw away key for this project - an actual human comment
 export const CARTO_API_KEY = 'cb1_3fme_1_eb3991beb7b07217ee922ba3';
 
-/* The two basemaps the day/night button switches between. Dark Matter and
-   Positron are a matched pair - the same cartography, drawn for opposite
-   grounds - so the map keeps its shape across the switch and only its ground
-   changes.
+/* The basemaps the map picker offers, in the order it lists them. Two families
+   with a light and a dark of each, and they are not interchangeable:
 
-   Both are backdrop styles: deliberately drained of colour and stripped of
-   POI icons, so neither shows parking, shops or amenities the way OSM's own
-   rendering does. That is the trade for a keyed, quota-backed tile source.
-   'rastertiles/voyager' is the third of the set, a touch warmer than Positron.
+   OpenStreetMap's own rendering is the detailed one - parking, shops,
+   amenities, the things you actually want on a map you are about to go and
+   drive. It publishes no dark tiles, so the dark of that pair is the daylight
+   tile inverted in CSS (see `invert`), which keeps every one of those icons.
 
-   CARTO is retiring raster in favour of vector, so treat these as a
-   comfortable stopgap rather than a permanent address. */
-export const CARTO_STYLE_DARK = 'dark_all';
-export const CARTO_STYLE_LIGHT = 'light_all';
+   CARTO's Positron and Dark Matter are a matched pair drawn for opposite
+   grounds, so the map keeps its shape across that switch. They are backdrop
+   styles though: deliberately drained of colour and stripped of POI icons, so
+   they show far less. They need the key above, and CARTO is retiring raster in
+   favour of vector, so treat them as a comfortable stopgap.
+
+   Per entry:
+     dark    which route palette and map inks to dress the page in
+     invert  render the tiles through the inversion filter in the stylesheet
+     needsKey  hidden from the picker when CARTO_API_KEY is empty */
+export const BASEMAPS = [
+  {
+    id: 'osm',
+    label: 'OpenStreetMap',
+    url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+    maxZoom: 19,
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+  },
+  {
+    id: 'osm-dark',
+    label: 'OpenStreetMap dark',
+    url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+    maxZoom: 19,
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+    dark: true,
+    invert: true,
+  },
+  {
+    id: 'carto-light',
+    label: 'CARTO Positron',
+    url: 'https://basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
+    maxZoom: 20,
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> '
+               + 'contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+    needsKey: true,
+  },
+  {
+    id: 'carto-dark',
+    label: 'CARTO Dark Matter',
+    url: 'https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+    maxZoom: 20,
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> '
+               + 'contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+    dark: true,
+    needsKey: true,
+  },
+];
 
 // Which one a first-time visitor gets; after that their own choice is
-// remembered. 'dark' or 'light'.
-export const MAP_MODE_DEFAULT = 'dark';
+// remembered. Must be one of the ids above.
+export const BASEMAP_DEFAULT = 'osm';
 
 /* One route palette per basemap, because the same line cannot read on both.
    Both avoid green, which the drawn zone's outline wears, and both lead with

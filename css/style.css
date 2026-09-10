@@ -87,10 +87,7 @@ html, body {
 #map { flex: 1; min-height: 0; }
 
 /* ------------------------------------------------------------------ brand */
-#panel > header {
-  display: flex; align-items: center; justify-content: space-between; gap: 10px;
-  margin-bottom: 18px;
-}
+#panel > header { margin-bottom: 18px; }
 .brand { display: flex; align-items: center; min-width: 0; }
 .brand h1 {
   margin: 0;
@@ -109,30 +106,6 @@ html, body {
   stroke-linecap: round; stroke-linejoin: round;
 }
 .logo-dot { fill: currentColor; stroke: none; }
-
-/* The day/night button, beside the brand. It changes the basemap only - the
-   panel around it is dark either way - so it is deliberately small and quiet
-   rather than a headline control. */
-.icon-btn {
-  flex: 0 0 auto;
-  display: grid; place-items: center;
-  width: 32px; height: 32px; padding: 0;
-  color: var(--ink-2); background: transparent;
-  border: 1px solid var(--line-2); border-radius: 9px;
-  cursor: pointer;
-  transition: background 0.12s ease, color 0.12s ease;
-}
-.icon-btn:hover { background: var(--hover); color: var(--ink); }
-.icon-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.icon-btn svg {
-  width: 16px; height: 16px;
-  fill: none; stroke: currentColor; stroke-width: 1.8;
-  stroke-linecap: round; stroke-linejoin: round;
-}
-/* Show the map you would switch to, not the one you are looking at. */
-.icon-moon { display: none; }
-:root[data-map="light"] .icon-moon { display: block; }
-:root[data-map="light"] .icon-sun { display: none; }
 
 /* --------------------------------------------------------- floating cards */
 /* One bar across the top of the map: the tools, then the place search. Its
@@ -195,6 +168,34 @@ html, body {
   fill: none; stroke: currentColor; stroke-width: 1.9;
   stroke-linecap: round; stroke-linejoin: round;
 }
+
+/* ------------------------------------------------------------ map picker */
+/* Last on the bar, past the search. A native select: the option list is drawn
+   by the OS, which keeps it keyboard- and screen-reader-correct for free and
+   costs no popup code - the trade is that only the closed state is styleable,
+   which is all that shows on the bar anyway. */
+.basemap {
+  display: flex; align-items: center; gap: 5px;
+  padding-left: 8px;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+.basemap:hover { color: var(--ink); }
+.basemap svg {
+  width: 15px; height: 15px; flex: 0 0 auto;
+  fill: none; stroke: currentColor; stroke-width: 1.7;
+  stroke-linecap: round; stroke-linejoin: round;
+}
+.basemap select {
+  font: inherit; font-size: 13px; font-weight: 520;
+  color: inherit; background: transparent;
+  border: 0; border-radius: 8px;
+  padding: 6px 2px 6px 0;
+  cursor: pointer;
+}
+.basemap select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* The list itself is an OS window, so it does not inherit the page's ink. */
+.basemap option { color: var(--ink); background: var(--panel); }
 
 /* ------------------------------------------------------- map tool bar */
 .toolbar { display: flex; gap: 3px; }
@@ -375,6 +376,19 @@ html, body {
 .hidden { display: none !important; }
 
 .leaflet-container { background: var(--map-bg); }
+
+/* OpenStreetMap publishes no dark tiles, so its dark option is the daylight
+   tile turned inside out: invert for the ground, a half turn of hue to put
+   water back to blue and parks back to green. Lifted and desaturated from a
+   straight inversion, which comes out garish - a photo negative rather than a
+   map. The gain over a purpose-built dark style is that every POI icon
+   survives: parking, shops, hospitals, all of it.
+
+   Only the tile pane is touched. Routes, zones, pins and the arrow canvas
+   live in their own panes and must keep the colours they were given. */
+:root[data-tiles="inverted"] .leaflet-tile-pane {
+  filter: invert(1) hue-rotate(180deg) brightness(1.15) contrast(0.78) saturate(0.5);
+}
 
 /* Leaflet gives every drawn path `cursor: pointer`, which would say "click me"
    right where you are trying to start the next zone. While a draw tool is

@@ -11,13 +11,13 @@ const $ = (id) => document.getElementById(id);
 // The three ways to draw. Each one is a full drag gesture: press, move, release.
 const SHAPES = ['rect', 'circle', 'freehand'];
 
-/* Which basemap is showing, and so which route palette reads on it. Not a
-   theme: the panel is dark either way, and only the map changes. */
-const MAP_MODE_KEY = 'routile-map-mode';
-let mapMode = config.MAP_MODE_DEFAULT;
+/* Which basemap is showing, and so which route palette reads on it. Not a page
+   theme: the panel is dark whichever map is picked, and only the map changes. */
+const BASEMAP_KEY = 'routile-basemap';
+let basemap = config.BASEMAPS[0];
 
 const palette = () =>
-  (mapMode === 'light' ? config.ROUTE_PALETTE_LIGHT : config.ROUTE_PALETTE_DARK);
+  (basemap.dark ? config.ROUTE_PALETTE_DARK : config.ROUTE_PALETTE_LIGHT);
 
 const sessionColor = (i) => palette()[i % palette().length];
 
@@ -125,41 +125,22 @@ new ResizeObserver(() => {
 }).observe($('stage'));
 
 /* ------------------------------------------------------------- basemap */
-/* CARTO where a key is configured, OpenStreetMap's own tiles where it is not -
-   see CARTO_API_KEY in config.js, which is where the key goes. Attribution is
-   a licence condition for both and is set accordingly.
-
-   Without a key there is only the one map, so the day/night button has nothing
-   to switch and hides itself. OSM publishes no dark rendering, and inverting
-   the daylight one in CSS is the trick this replaced.
-
-   {r} is Leaflet's retina placeholder: '@2x' on a hidpi screen and empty
-   elsewhere, so a sharp screen gets sharp tiles for the same one request per
-   tile. OSM serves no @2x, hence only CARTO's URL carries it. */
-const CARTO_ATTR = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> '
-                 + 'contributors &copy; <a href="https://carto.com/attributions">CARTO</a>';
-const OSM_ATTR = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
-
-function basemapFor(mode) {
-  if (!config.CARTO_API_KEY) {
-    return {
-      url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-      maxZoom: 19, attribution: OSM_ATTR,
-    };
-  }
-  const style = mode === 'light' ? config.CARTO_STYLE_LIGHT : config.CARTO_STYLE_DARK;
-  return {
-    url: `https://basemaps.cartocdn.com/${style}/{z}/{x}/{y}{r}.png`
-       + `?key=${encodeURIComponent(config.CARTO_API_KEY)}`,
-    maxZoom: 20, attribution: CARTO_ATTR,
-  };
-}
+/* The maps on offer are declared in config.js; this builds the picker from
+   them and dresses the page to match whichever is chosen. The CARTO ones need
+   a key and drop out of the list without one. */
+const BASEMAP_CHOICES = config.BASEMAPS.filter(
+  (m) => !m.needsKey || config.CARTO_API_KEY);
 
 let tileLayer = null;
 
-function setBasemap(mode) {
-  const spec = basemapFor(mode);
-  const next = L.tileLayer(spec.url, {
+/* {r} is Leaflet's retina placeholder: '@2x' on a hidpi screen and empty
+   elsewhere, so a sharp screen gets sharp tiles for the same one request per
+   tile. OSM serves no @2x, so only CARTO's URLs carry it. */
+function addTiles(spec) {
+  const url = spec.needsKey
+    ? `${spec.url}?key=${encodeURIComponent(config.CARTO_API_KEY)}`
+    : spec.url;
+  const next = L.tileLayer(url, {
     maxZoom: spec.maxZoom,
     // Fetched with CORS, so the same cached tiles may be drawn onto the canvas
     // behind the exported map image. Both tile servers allow any origin.
@@ -174,17 +155,39 @@ function setBasemap(mode) {
   const old = tileLayer;
   tileLayer = next;
   if (old) next.once('load', () => map.removeLayer(old));
+
+  /* A keyed basemap can fail wholesale rather than tile by tile: CARTO binds a
+     key to one origin, so it serves nothing from anywhere else - a local
+     checkout included - and a spent quota would look the same. That failure is
+     a blank map, which says nothing about what went wrong, so fall back to the
+     basemap that needs no key and let the picker say so.
+
+     Counted rather than tripped on the first error, since one tile can fail on
+     its own for reasons that are nobody's fault. */
+  if (!spec.needsKey) return;
+  let bad = 0;
+  next.on('tileerror', () => {
+    if (++bad < 3 || tileLayer !== next) return;
+    next.off('tileerror');
+    const plain = BASEMAP_CHOICES.find((m) => !m.needsKey);
+    if (plain) setBasemap(plain.id, { save: false });
+  });
 }
 
-/* The day/night button changes the basemap and everything drawn on top of it:
-   the marks answer to the ground they sit on, not to the panel, so the route
-   palette, the zone green and the arrows' halo all move with the tiles. The
-   CSS variables come from the [data-map] block in the stylesheet, so the
-   attribute has to be stamped before anything re-reads them. */
-function setMapMode(mode, { save = true } = {}) {
-  mapMode = mode === 'light' ? 'light' : 'dark';
-  document.documentElement.dataset.map = mapMode;
-  setBasemap(mapMode);
+/* Picking a map changes everything drawn on top of it too: the marks answer to
+   the ground they sit on, not to the panel, so the route palette, the zone
+   green and the arrows' halo all move with the tiles. Those come from the
+   [data-map] block in the stylesheet, so the attribute is stamped first and
+   everything that reads a variable is refreshed after. */
+function setBasemap(id, { save = true } = {}) {
+  basemap = BASEMAP_CHOICES.find((m) => m.id === id) || BASEMAP_CHOICES[0];
+  const root = document.documentElement;
+  root.dataset.map = basemap.dark ? 'dark' : 'light';
+  // OSM publishes no dark tiles, so its dark option is the daylight tile put
+  // through the inversion filter in the stylesheet.
+  if (basemap.invert) root.dataset.tiles = 'inverted';
+  else delete root.dataset.tiles;
+  addTiles(basemap);
 
   drawRegions();                                  // zones, in the new green
   state.routeLayers.forEach((line, i) => {
@@ -199,24 +202,28 @@ function setMapMode(mode, { save = true } = {}) {
     item.querySelector('.swatch').style.background =
       sessionColor(Number(item.dataset.session));
   }
-  // The highlight sets per-session opacity, which the restyle above cleared.
+  // The restyle above cleared the per-session opacity the highlight sets.
   applyHighlight(state.hovered !== null ? state.hovered : state.pinned,
     { scroll: false });
 
+  if ($('basemap').value !== basemap.id) $('basemap').value = basemap.id;
   if (save) {
-    try { localStorage.setItem(MAP_MODE_KEY, mapMode); } catch (err) { /* private mode */ }
+    try { localStorage.setItem(BASEMAP_KEY, basemap.id); } catch (err) { /* private mode */ }
   }
 }
 
-$('map-mode').addEventListener('click',
-  () => setMapMode(mapMode === 'dark' ? 'light' : 'dark'));
+$('basemap').innerHTML = BASEMAP_CHOICES.map(
+  (m) => `<option value="${m.id}">${escapeHtml(m.label)}</option>`).join('');
+$('basemap').addEventListener('change', (ev) => setBasemap(ev.target.value));
+// One map on offer is not a choice; the picker and its hairline only appear
+// when there are two. That is the keyless case - see BASEMAPS in config.js.
+const onlyOneMap = BASEMAP_CHOICES.length < 2;
+$('basemap-field').classList.toggle('hidden', onlyOneMap);
+$('basemap-sep').classList.toggle('hidden', onlyOneMap);
 
-// Nothing to switch between without a key; see basemapFor above.
-$('map-mode').classList.toggle('hidden', !config.CARTO_API_KEY);
-
-let storedMode = null;
-try { storedMode = localStorage.getItem(MAP_MODE_KEY); } catch (err) { /* private mode */ }
-setMapMode(storedMode || config.MAP_MODE_DEFAULT, { save: false });
+let storedMap = null;
+try { storedMap = localStorage.getItem(BASEMAP_KEY); } catch (err) { /* private mode */ }
+setBasemap(storedMap || config.BASEMAP_DEFAULT, { save: false });
 
 /* -------------------------------------------------------------- drawing */
 /* One drag gesture, three shapes, and one code path for a mouse, a finger and
