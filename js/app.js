@@ -1216,14 +1216,16 @@ function renderResult(res) {
   ).join('');
 
   // One button, one zip: the GPX file(s) - one per session, because one
-  // 80,000-point track is more than most nav apps will take - plus a PNG of
-  // the map and a README, so a single session gets the same package.
+  // 80,000-point track is more than most nav apps will take - plus
+  // metadata.json, so a single session gets the same package.
   const many = sessions.length > 1;
   $('download').textContent = many
     ? `Download ${sessions.length} sessions (.zip)`
     : 'Download route (.zip)';
   $('download-note').textContent =
-    'Open the downloaded .gpx file(s) in OsmAnd or any other similar mobile app.';
+    'Open the downloaded .gpx file(s) in OsmAnd or any other similar mobile app. '
+    + 'Downloaded ZIP file also contains metadata.json, which is necessary to '
+    + 'load this export back to Routile.';
 }
 
 $('download').onclick = async () => {
