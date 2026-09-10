@@ -63,6 +63,16 @@ export const DetailLayer = L.Layer.extend({
     this.setRoute();
   },
 
+  /* New colours without new geometry: the day/night button swaps the basemap
+     under the marks, so the route hues and the halo they sit on both change
+     while the arrows and dots stay exactly where they are. */
+  restyle({ colors, halo, dot }) {
+    if (colors) this._colors = colors;
+    if (halo) this.options.halo = halo;
+    if (dot) this.options.dot = dot;
+    this._draw();
+  },
+
   /* Show one session's arrows alone, or all of them again with null. The dots
      belong to the whole route, so they are not touched. */
   setHighlight(index) {

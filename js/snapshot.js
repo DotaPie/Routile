@@ -16,7 +16,9 @@
    area at once, and there is no reason to spend a metered basemap's quota on
    it when the free one draws the same paper map. */
 
-import { PAPER_PALETTE } from './config.js';
+// The paper the picture is drawn on is white, so it wants the light basemap's
+// palette whichever way the screen happens to be set.
+import { ROUTE_PALETTE_LIGHT as PAPER_PALETTE } from './config.js';
 
 const TILE = 256;
 const tileUrl = (z, x, y) =>

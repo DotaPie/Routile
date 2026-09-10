@@ -11,11 +11,15 @@ const $ = (id) => document.getElementById(id);
 // The three ways to draw. Each one is a full drag gesture: press, move, release.
 const SHAPES = ['rect', 'circle', 'freehand'];
 
-/* One palette for the screen and for the exported picture, now that both are
-   drawn on a pale map. See ROUTE_PALETTE in config.js for how it was chosen. */
-const SESSION_COLORS = config.ROUTE_PALETTE;
+/* Which basemap is showing, and so which route palette reads on it. Not a
+   theme: the panel is dark either way, and only the map changes. */
+const MAP_MODE_KEY = 'routile-map-mode';
+let mapMode = config.MAP_MODE_DEFAULT;
 
-const sessionColor = (i) => SESSION_COLORS[i % SESSION_COLORS.length];
+const palette = () =>
+  (mapMode === 'light' ? config.ROUTE_PALETTE_LIGHT : config.ROUTE_PALETTE_DARK);
+
+const sessionColor = (i) => palette()[i % palette().length];
 
 const ROUTE_WEIGHT = 3;
 
@@ -120,32 +124,99 @@ new ResizeObserver(() => {
   map.invalidateSize({ animate: false });
 }).observe($('stage'));
 
-/* CARTO's pale basemap where a key is configured, OpenStreetMap's own tiles
-   where it is not - see CARTO_API_KEY in config.js, which is where the key
-   goes. Attribution is a licence condition for both and is set accordingly.
+/* ------------------------------------------------------------- basemap */
+/* CARTO where a key is configured, OpenStreetMap's own tiles where it is not -
+   see CARTO_API_KEY in config.js, which is where the key goes. Attribution is
+   a licence condition for both and is set accordingly.
+
+   Without a key there is only the one map, so the day/night button has nothing
+   to switch and hides itself. OSM publishes no dark rendering, and inverting
+   the daylight one in CSS is the trick this replaced.
 
    {r} is Leaflet's retina placeholder: '@2x' on a hidpi screen and empty
    elsewhere, so a sharp screen gets sharp tiles for the same one request per
    tile. OSM serves no @2x, hence only CARTO's URL carries it. */
-const basemap = config.CARTO_API_KEY ? {
-  url: `https://basemaps.cartocdn.com/${config.CARTO_STYLE}/{z}/{x}/{y}{r}.png`
-     + `?key=${encodeURIComponent(config.CARTO_API_KEY)}`,
-  maxZoom: 20,
-  attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> '
-             + 'contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
-} : {
-  url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-  maxZoom: 19,
-  attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-};
+const CARTO_ATTR = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> '
+                 + 'contributors &copy; <a href="https://carto.com/attributions">CARTO</a>';
+const OSM_ATTR = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
 
-L.tileLayer(basemap.url, {
-  maxZoom: basemap.maxZoom,
-  // Fetched with CORS, so the same cached tiles may be drawn onto the canvas
-  // behind the exported map image. Both tile servers allow any origin.
-  crossOrigin: 'anonymous',
-  attribution: basemap.attribution,
-}).addTo(map);
+function basemapFor(mode) {
+  if (!config.CARTO_API_KEY) {
+    return {
+      url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+      maxZoom: 19, attribution: OSM_ATTR,
+    };
+  }
+  const style = mode === 'light' ? config.CARTO_STYLE_LIGHT : config.CARTO_STYLE_DARK;
+  return {
+    url: `https://basemaps.cartocdn.com/${style}/{z}/{x}/{y}{r}.png`
+       + `?key=${encodeURIComponent(config.CARTO_API_KEY)}`,
+    maxZoom: 20, attribution: CARTO_ATTR,
+  };
+}
+
+let tileLayer = null;
+
+function setBasemap(mode) {
+  const spec = basemapFor(mode);
+  const next = L.tileLayer(spec.url, {
+    maxZoom: spec.maxZoom,
+    // Fetched with CORS, so the same cached tiles may be drawn onto the canvas
+    // behind the exported map image. Both tile servers allow any origin.
+    crossOrigin: 'anonymous',
+    attribution: spec.attribution,
+  });
+  // The new tiles go under everything already drawn, and the old layer is only
+  // dropped once they have loaded - otherwise the switch flashes the empty
+  // container colour across the whole map.
+  next.addTo(map);
+  next.getContainer().style.zIndex = 1;
+  const old = tileLayer;
+  tileLayer = next;
+  if (old) next.once('load', () => map.removeLayer(old));
+}
+
+/* The day/night button changes the basemap and everything drawn on top of it:
+   the marks answer to the ground they sit on, not to the panel, so the route
+   palette, the zone green and the arrows' halo all move with the tiles. The
+   CSS variables come from the [data-map] block in the stylesheet, so the
+   attribute has to be stamped before anything re-reads them. */
+function setMapMode(mode, { save = true } = {}) {
+  mapMode = mode === 'light' ? 'light' : 'dark';
+  document.documentElement.dataset.map = mapMode;
+  setBasemap(mapMode);
+
+  drawRegions();                                  // zones, in the new green
+  state.routeLayers.forEach((line, i) => {
+    if (line) line.setStyle({ color: sessionColor(i) });
+  });
+  state.detail.restyle({
+    colors: state.routeLayers.map((_, i) => sessionColor(i)),
+    halo: cssVar('--map-bg'),
+    dot: cssVar('--map-ink'),
+  });
+  for (const item of $('legend').querySelectorAll('.legend-item')) {
+    item.querySelector('.swatch').style.background =
+      sessionColor(Number(item.dataset.session));
+  }
+  // The highlight sets per-session opacity, which the restyle above cleared.
+  applyHighlight(state.hovered !== null ? state.hovered : state.pinned,
+    { scroll: false });
+
+  if (save) {
+    try { localStorage.setItem(MAP_MODE_KEY, mapMode); } catch (err) { /* private mode */ }
+  }
+}
+
+$('map-mode').addEventListener('click',
+  () => setMapMode(mapMode === 'dark' ? 'light' : 'dark'));
+
+// Nothing to switch between without a key; see basemapFor above.
+$('map-mode').classList.toggle('hidden', !config.CARTO_API_KEY);
+
+let storedMode = null;
+try { storedMode = localStorage.getItem(MAP_MODE_KEY); } catch (err) { /* private mode */ }
+setMapMode(storedMode || config.MAP_MODE_DEFAULT, { save: false });
 
 /* -------------------------------------------------------------- drawing */
 /* One drag gesture, three shapes, and one code path for a mouse, a finger and
@@ -532,9 +603,16 @@ function setMode(mode) {
   const drawing = SHAPES.includes(mode);
   mapEl.classList.toggle('drawing', drawing);
   mapEl.classList.toggle('pinning', mode === 'pin');
-  // A shape tool owns the drag gesture, so Leaflet must not pan with it as
-  // well. This is what lets one finger draw on a touch screen.
-  if (drawing) map.dragging.disable(); else map.dragging.enable();
+  /* A shape tool owns the drag gesture, so Leaflet must not pan with it as
+     well. This is what lets one finger draw on a touch screen.
+
+     The start pin owns it just as much: with Start armed a press means "put it
+     here", and leaving Leaflet's drag handler live meant an unsteady hand
+     panned the map out from under the click instead of dropping the pin. The
+     held middle or right button still pans in every mode, and the wheel still
+     zooms, so nothing is actually trapped. */
+  const ownsDrag = drawing || mode === 'pin';
+  if (ownsDrag) map.dragging.disable(); else map.dragging.enable();
 }
 
 for (const [key, id] of Object.entries(TOOL_BUTTONS)) {

@@ -25,21 +25,33 @@
   --bad: #ff7368;
   --bad-soft: #2c1917;
   --bad-line: #4d2724;
-  /* The map's own colours, kept apart from the panel's even though both are
-     dark: the basemap is CARTO Dark Matter, not this stylesheet, so what is
-     drawn over it answers to the tiles rather than to the UI. --map-bg is the
-     colour behind the tiles and, doing double duty, the halo the arrows and
-     waypoint dots are ringed in; --map-ink is what those dots are filled with,
-     light because the ground under them is dark. */
-  --map-bg: #0b0f12;
-  --map-ink: #e8eef2;
-  --zone: #35d29a;
   --glass: rgba(23, 28, 33, 0.93);
-  --pin-ring: #0b1a15;
   --r: 10px;
   --r-sm: 7px;
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.35), 0 4px 12px rgba(0, 0, 0, 0.30);
   --shadow-lg: 0 2px 6px rgba(0, 0, 0, 0.42), 0 12px 28px rgba(0, 0, 0, 0.38);
+}
+
+/* The map's own colours, kept apart from the panel's because they answer to
+   the basemap rather than to the UI - and the basemap is the one thing the
+   day/night button changes. --map-bg is the colour behind the tiles and,
+   doing double duty, the halo the arrows and waypoint dots are ringed in;
+   --map-ink fills those dots, and so is the opposite of the ground. The zone
+   green goes deeper on the light map, where the brand's own green washes out.
+
+   The dark set sits on bare :root rather than behind an attribute, so the map
+   is dressed before any script has run and cannot flash unstyled. */
+:root {
+  --map-bg: #0b0f12;
+  --map-ink: #e8eef2;
+  --zone: #35d29a;
+  --pin-ring: #0b1a15;
+}
+:root[data-map="light"] {
+  --map-bg: #f4f6f8;
+  --map-ink: #10151c;
+  --zone: #0b8f68;
+  --pin-ring: #ffffff;
 }
 
 * { box-sizing: border-box; }
@@ -75,7 +87,10 @@ html, body {
 #map { flex: 1; min-height: 0; }
 
 /* ------------------------------------------------------------------ brand */
-#panel > header { margin-bottom: 18px; }
+#panel > header {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  margin-bottom: 18px;
+}
 .brand { display: flex; align-items: center; min-width: 0; }
 .brand h1 {
   margin: 0;
@@ -94,6 +109,30 @@ html, body {
   stroke-linecap: round; stroke-linejoin: round;
 }
 .logo-dot { fill: currentColor; stroke: none; }
+
+/* The day/night button, beside the brand. It changes the basemap only - the
+   panel around it is dark either way - so it is deliberately small and quiet
+   rather than a headline control. */
+.icon-btn {
+  flex: 0 0 auto;
+  display: grid; place-items: center;
+  width: 32px; height: 32px; padding: 0;
+  color: var(--ink-2); background: transparent;
+  border: 1px solid var(--line-2); border-radius: 9px;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.icon-btn:hover { background: var(--hover); color: var(--ink); }
+.icon-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.icon-btn svg {
+  width: 16px; height: 16px;
+  fill: none; stroke: currentColor; stroke-width: 1.8;
+  stroke-linecap: round; stroke-linejoin: round;
+}
+/* Show the map you would switch to, not the one you are looking at. */
+.icon-moon { display: none; }
+:root[data-map="light"] .icon-moon { display: block; }
+:root[data-map="light"] .icon-sun { display: none; }
 
 /* --------------------------------------------------------- floating cards */
 /* One bar across the top of the map: the tools, then the place search. Its
@@ -345,10 +384,16 @@ html, body {
 /* A finger drawing a zone must not also scroll the page or pinch the map. */
 #map.drawing { touch-action: none; }
 /* Placing the start carries the pin itself, tip on the hotspot, so it is
-   obvious that the next click drops it rather than selects something. */
+   obvious that the next click drops it rather than selects something. A cursor
+   is a data URI, not a styleable element, so each basemap needs its own -
+   the dark map's pin is ringed in near-black, the light map's in white. */
 #map.pinning,
 #map.pinning .leaflet-interactive {
   cursor: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='34'%20height='34'%20viewBox='0%200%2024%2024'%3E%3Cpath%20d='M12%2021s6.5-6.2%206.5-11a6.5%206.5%200%201%200-13%200C5.5%2014.8%2012%2021%2012%2021z'%20fill='%2335d29a'%20stroke='%230b1a15'%20stroke-width='1.5'/%3E%3Ccircle%20cx='12'%20cy='10'%20r='2.6'%20fill='%230b1a15'/%3E%3C/svg%3E") 17 30, crosshair;
+}
+:root[data-map="light"] #map.pinning,
+:root[data-map="light"] #map.pinning .leaflet-interactive {
+  cursor: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='34'%20height='34'%20viewBox='0%200%2024%2024'%3E%3Cpath%20d='M12%2021s6.5-6.2%206.5-11a6.5%206.5%200%201%200-13%200C5.5%2014.8%2012%2021%2012%2021z'%20fill='%230b8f68'%20stroke='%23ffffff'%20stroke-width='1.5'/%3E%3Ccircle%20cx='12'%20cy='10'%20r='2.6'%20fill='%23ffffff'/%3E%3C/svg%3E") 17 30, crosshair;
 }
 /* Held middle or right mouse button: a temporary grab, whatever tool is armed. */
 #map.grabbing,

@@ -11,30 +11,40 @@ export const ALGO_VERSION = '9';
 // Throw away key for this project - an actual human comment
 export const CARTO_API_KEY = 'cb1_3fme_1_eb3991beb7b07217ee922ba3';
 
-/* 'dark_all' is Dark Matter, a basemap actually drawn dark - unlike the
-   inverted daylight tiles this replaced, where the hue rotation left roads and
-   parks looking like a photo negative. 'light_all' is Positron and
-   'rastertiles/voyager' is Voyager; both are pale backdrop styles, deliberately
-   drained of colour, so neither is the "normal bright map" it sounds like.
-   CARTO is retiring raster in favour of vector, so treat this as a comfortable
-   stopgap rather than a permanent address. */
-export const CARTO_STYLE = 'dark_all';
+/* The two basemaps the day/night button switches between. Dark Matter and
+   Positron are a matched pair - the same cartography, drawn for opposite
+   grounds - so the map keeps its shape across the switch and only its ground
+   changes.
 
-/* Two palettes, because the route is drawn on two very different grounds.
+   Both are backdrop styles: deliberately drained of colour and stripped of
+   POI icons, so neither shows parking, shops or amenities the way OSM's own
+   rendering does. That is the trade for a keyed, quota-backed tile source.
+   'rastertiles/voyager' is the third of the set, a touch warmer than Positron.
 
+   CARTO is retiring raster in favour of vector, so treat these as a
+   comfortable stopgap rather than a permanent address. */
+export const CARTO_STYLE_DARK = 'dark_all';
+export const CARTO_STYLE_LIGHT = 'light_all';
+
+// Which one a first-time visitor gets; after that their own choice is
+// remembered. 'dark' or 'light'.
+export const MAP_MODE_DEFAULT = 'dark';
+
+/* One route palette per basemap, because the same line cannot read on both.
    Both avoid green, which the drawn zone's outline wears, and both lead with
    violet rather than orange: road maps paint primary roads orange and trunk
    roads salmon, so an orange route is easy to mistake for the map's own
    colouring. */
 
-// On screen, over the dark basemap: bright, saturated, glowing.
-export const ROUTE_PALETTE = ['#a78bfa', '#22d3ee', '#f472b6', '#fb923c', '#facc15',
-                              '#f87171', '#60a5fa', '#e879f9', '#38bdf8', '#fda4af'];
+// Over the dark basemap: bright and saturated, near enough to glowing.
+export const ROUTE_PALETTE_DARK = ['#a78bfa', '#22d3ee', '#f472b6', '#fb923c', '#facc15',
+                                   '#f87171', '#60a5fa', '#e879f9', '#38bdf8', '#fda4af'];
 
-// In the exported PNG, which is paper white and may well be printed: the same
-// hues taken darker, so they read as ink rather than as highlighter.
-export const PAPER_PALETTE = ['#7c3aed', '#0284c7', '#c026d3', '#ea580c', '#e11d48',
-                              '#4f46e5', '#ca8a04', '#be123c', '#0369a1', '#a21caf'];
+// Over the light basemap, and over the exported PNG, which is paper white and
+// may well be printed: the same hues taken darker, so they read as ink rather
+// than as highlighter.
+export const ROUTE_PALETTE_LIGHT = ['#7c3aed', '#0284c7', '#c026d3', '#ea580c', '#e11d48',
+                                    '#4f46e5', '#ca8a04', '#be123c', '#0369a1', '#a21caf'];
 
 // ---------------------------------------------------------------- area limits
 // No product-level cap: draw whatever you like. This ceiling is deliberately far
