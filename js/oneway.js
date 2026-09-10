@@ -18,10 +18,20 @@
       possible before any deadheading is added.
    3. Solve the resulting *directed* problem exactly, with the min-cost flow.
    4. Improve: flip streets that would reduce junction imbalance, re-solve, and
-      keep the change only if the real cost actually dropped. */
+      keep the change only if the real cost actually dropped.
+
+   Two graphs are in play and they are not interchangeable. Steps 2 and 4 reason
+   about *junctions* - how many streets point into one and how many point out -
+   so they read the road graph. Step 3 solves for real, so it reads the turn
+   graph, where the cost of a route includes what its turns cost. Run the
+   junction reasoning on the turn graph instead and it says nothing at all:
+   every road arc there runs from its own entry node to its own exit node, so
+   the imbalance at both ends is the same for every street and no flip ever
+   looks like an improvement. */
 
 import { MCF_TIME_SCALE } from './config.js';
 import { balance, nodeDemands } from './cpp.js';
+import { liftMask } from './turns.js';
 
 /* Collapse required arcs into streets: a pair when both directions exist and
    either would satisfy it, a single when the direction is forced - a genuine
@@ -70,9 +80,19 @@ export function orientGreedily(g, streets) {
   return chosen;
 }
 
+/* What the local search minimises: driving plus what the turns cost. */
 export function totalCost(g, mult) {
   let total = 0;
   for (let a = 0; a < g.E; a++) total += g.cost[a] * mult[a];
+  return total;
+}
+
+/* The driving alone, for saying out loud. Turn prices steer the search but
+   nobody spends them, so quoting them back as minutes would be a lie. */
+function drivingCost(exp, mult) {
+  const g = exp.roads;
+  let total = 0;
+  for (let a = 0; a < exp.roadArcs; a++) total += g.cost[a] * mult[a];
   return total;
 }
 
@@ -98,17 +118,20 @@ export function verifyCoversEveryStreet(streets, mult) {
   if (missed) throw new Error(`${missed} streets are never driven`);
 }
 
-/* Traversal counts for driving every street once, direction free. Returns
-   { mult, info }; `info` records what the local search managed. */
-export function balanceOneway(g, required, { passes, timeBudgetS, maxRounds = 60, progress = null }) {
+/* Traversal counts for driving every street once, direction free. `exp` is the
+   turn graph from turns.expandTurns(); `required` is a mask over road arcs.
+   Returns { mult, info } with mult over the *turn* graph's arcs; `info` records
+   what the local search managed. */
+export function balanceOneway(exp, required, { passes, timeBudgetS, maxRounds = 60, progress = null }) {
   if (passes < 1) throw new Error('passes must be at least 1');
   const say = progress || (() => {});
+  const g = exp.roads, t = exp.graph;
   const streets = groupStreets(g, required);
   const choosable = streets.filter((s) => s.length === 2);
 
   let chosen = orientGreedily(g, streets);
-  let mult = balance(g, chosen, passes);
-  let cost = totalCost(g, mult);
+  let mult = balance(t, liftMask(exp, chosen), passes);
+  let cost = totalCost(t, mult);
   const initialCost = cost;
 
   const started = performance.now();
@@ -133,16 +156,16 @@ export function balanceOneway(g, required, { passes, timeBudgetS, maxRounds = 60
 
     let trialMult;
     try {
-      trialMult = balance(g, trial, passes);
+      trialMult = balance(t, liftMask(exp, trial), passes);
     } catch (err) {
       batch = Math.floor(batch / 2);
       continue;
     }
-    const trialCost = totalCost(g, trialMult);
+    const trialCost = totalCost(t, trialMult);
     if (trialCost < cost) {
       chosen = trial; mult = trialMult; cost = trialCost;
       accepted++;
-      say('balance', `one-way route down to ${Math.round(cost / (MCF_TIME_SCALE * 60))} min`);
+      say('balance', `one-way route down to ${Math.round(drivingCost(exp, mult) / (MCF_TIME_SCALE * 60))} min`);
     } else {
       // Overshot. A smaller batch can still find a gain this one buried.
       batch = Math.floor(batch / 2);

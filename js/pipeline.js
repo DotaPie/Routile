@@ -10,6 +10,7 @@ import { Area } from './area.js';
 import * as osm from './osm.js';
 import * as cpp from './cpp.js';
 import * as oneway from './oneway.js';
+import * as turns from './turns.js';
 import { eulerianCircuit, verifyCircuit } from './euler.js';
 import { reduceTour } from './waypoints.js';
 import { chunkWaypoints, groupSessions, verifyChunks } from './sessions.js';
@@ -123,40 +124,51 @@ export async function compute(req, { progress = null, cache = null } = {}) {
   });
   const g = net.graph;
 
+  // Everything from here to the tour runs on the turn graph, where a junction
+  // movement is an arc with a price. The road graph is what the answer is
+  // expressed in, so each result crosses back as soon as it is made.
+  const exp = turns.expandTurns(g, { restricted: net.restricted });
+
   let mult, driven;
   if (req.bothDirections) {
     say('balance', 'solving the minimum-detour route (exact)');
-    mult = cpp.balance(g, net.required, req.passes);
+    mult = cpp.balance(exp.graph, turns.liftMask(exp, net.required), req.passes);
     driven = net.required;
   } else {
     say('balance', 'choosing a direction for each street');
-    ({ mult } = oneway.balanceOneway(g, net.required, {
+    ({ mult } = oneway.balanceOneway(exp, net.required, {
       passes: req.passes, timeBudgetS: config.ONEWAY_TIME_BUDGET_S, progress: say,
     }));
     // In one-way mode the chosen direction is only knowable from the result.
     driven = oneway.requiredForStats(g, mult, oneway.groupStreets(g, net.required));
   }
-  const tour = cpp.tourStats(g, mult, driven, req.passes);
+  // Turn prices are a lever on the solver, not time anyone spends driving, so
+  // the figures quoted to the user are measured on the road graph alone.
+  const roadMult = turns.projectMult(exp, mult);
+  const tour = cpp.tourStats(g, roadMult, driven, req.passes);
 
   // Snap the start onto the tour. The nearest node overall is often one the
   // drive never reaches - a road in the fetch buffer, or a stub the flow step
   // left out - and starting there would silently move the start somewhere
   // else. Restricting to the tour's own nodes makes the pin honest.
   const onTour = new Uint8Array(g.N);
-  for (let a = 0; a < g.E; a++) if (mult[a] > 0) onTour[g.tail[a]] = 1;
+  for (let a = 0; a < g.E; a++) if (roadMult[a] > 0) onTour[g.tail[a]] = 1;
   const [lon, lat] = req.startLon !== null && req.startLat !== null
     ? [req.startLon, req.startLat] : req.area.center;
   const start = osm.nearestNode(g, lon, lat, onTour);
 
   say('tour', 'ordering the drive');
-  const circuit = eulerianCircuit(g, mult, start);
-  verifyCircuit(g, circuit, mult, start);
+  const walk = eulerianCircuit(exp.graph, mult, turns.entryNode(exp, start, mult));
+  const circuit = turns.projectCircuit(exp, walk);
+  console.info(`tour makes ${turns.countPricedTurns(exp, walk)} turns it was charged for`);
+  verifyCircuit(g, circuit, roadMult, start);
 
   say('waypoints', 'working out the navigation points');
   const wps = reduceTour(g, circuit, {
     maxLegMetres: req.maxLegMetres, maxLegArcs: req.maxLegArcs,
     cutoffSeconds: config.WAYPOINT_DIJKSTRA_CUTOFF_S, margin: req.margin,
-    scale: config.MCF_TIME_SCALE, progress: say,
+    scale: config.MCF_TIME_SCALE, turnaroundFraction: config.WAYPOINT_TURNAROUND_FRACTION,
+    progress: say,
   });
 
   say('sessions', 'splitting into sessions');

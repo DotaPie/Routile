@@ -13,9 +13,14 @@ import { arcBearings } from './geo.js';
 
 export class Graph {
   /* `arcs` is an array of records:
-       { u, v, length, travel, geom, osmids, names, refs, highway }
+       { u, v, length, travel, geom, osmids, names, refs, highway, cost? }
      with u, v node indices, geom a flat [lon, lat, ...] Float64Array oriented
-     u -> v, osmids a sorted list of OSM way ids, names/refs sorted unique. */
+     u -> v, osmids a sorted list of OSM way ids, names/refs sorted unique.
+
+     `cost` overrides what the search charges for the arc, in the same integer
+     units travel time is scaled to. Only the turn graph uses it: a turn takes
+     no measurable time to drive but may still be one the route should pay to
+     avoid, and that price must not show up in the drive's reported duration. */
   constructor(ids, xs, ys, arcs) {
     const N = ids.length, E = arcs.length;
     this.N = N; this.E = E;
@@ -42,7 +47,7 @@ export class Graph {
       this.names[a] = r.names; this.refs[a] = r.refs; this.highway[a] = r.highway;
       // Integer costs, so shortest-path comparisons are exact rather than
       // epsilon-dependent. Travel-time seconds become deciseconds.
-      this.cost[a] = Math.max(Math.round(r.travel * MCF_TIME_SCALE), 1);
+      this.cost[a] = Math.max(Math.round(r.cost ?? r.travel * MCF_TIME_SCALE), 1);
     }
 
     // A deterministic arc order - by tail id, head id, then insertion - so
@@ -144,7 +149,7 @@ export class Graph {
       arcs.push({
         u, v, length: this.length[a], travel: this.travel[a], geom: this.geom[a],
         osmids: this.osmKey[a].split(','), names: this.names[a], refs: this.refs[a],
-        highway: this.highway[a],
+        highway: this.highway[a], cost: this.cost[a],
       });
     }
     return { graph: new Graph(ids, xs, ys, arcs), arcMap };

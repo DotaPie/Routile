@@ -27,6 +27,18 @@ The stamp is your own clock, and the same one throughout a download, so two goes
 
 Use for example OsmAnd [![Android](https://img.shields.io/badge/-3DDC84?logo=android&logoColor=white)](https://play.google.com/store/apps/details?id=net.osmand) [![iOS](https://img.shields.io/badge/-0D96F6?logo=apple&logoColor=white)](https://apps.apple.com/app/osmand-maps-travel-navigate/id934850257) to navigate with GPX file.
 
+## Turns
+
+The route is planned over the *movements* through a junction, not just the roads
+between them, so it doesn't ask for things you can't legally do: no turning round
+in the middle of a street, and no turns OpenStreetMap marks as banned. Where a
+street has to be covered in both directions it goes round the block instead.
+
+That costs distance — about a seventh more, on the town-sized area I measured it
+against — and it is the difference between a route you can follow and one you
+have to improvise your way around. Turning at a dead end is still a turnaround,
+because there is nothing else to do there.
+
 ## Opening a route again
 
 Drop a downloaded `.zip` onto the panel at the top left, or click it to pick the file. The zones, the start pin, every setting and the route itself come straight back — the whole thing is read out of `metadata.json`, so nothing is downloaded and nothing is recomputed. A GPX file on its own carries the track but none of the settings behind it, which is what that extra file is for.

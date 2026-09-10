@@ -16,10 +16,8 @@
    walk from v can only ever get stuck at v itself, so every greedy walk closes
    on its own; the splice loop mops up whatever arcs are left over. */
 
+import { UTURN_DEGREES } from './config.js';
 import { turnAngle } from './geo.js';
-
-// Anything sharper than this counts as a U-turn and is avoided unless forced.
-const UTURN_DEGREES = 150;
 
 /* Closed tour driving arc a exactly mult[a] times, as a list of arc indices.
    `start` is a node index, or -1 to let the tour pick. */

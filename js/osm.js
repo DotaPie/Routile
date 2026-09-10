@@ -51,9 +51,13 @@ export function roadFilter({ includePrivate = false } = {}) {
   return parts.join('');
 }
 
+/* Bump whenever overpassQuery() asks for something new, or a cache written by
+   the old query will be served to the new code, missing whatever was added. */
+const QUERY_VERSION = 2;
+
 /* Two queries asking for different roads must not share one cached download. */
 export const profileKey = ({ includePrivate = false } = {}) =>
-  (includePrivate ? 'drive+private' : 'drive');
+  `${includePrivate ? 'drive+private' : 'drive'}/v${QUERY_VERSION}`;
 
 const ONEWAY_VALUES = new Set(['yes', 'true', '1', '-1', 'reverse', 'T', 'F']);
 const REVERSED_VALUES = new Set(['-1', 'reverse', 'T']);
@@ -61,9 +65,16 @@ const REVERSED_VALUES = new Set(['-1', 'reverse', 'T']);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /* ----------------------------------------------------------------- fetching */
+/* The roads, and the turn restrictions over them.
+
+   The restrictions are a second, independent statement in the same query, so
+   they cost one round trip rather than two. They come back as relations, which
+   fromElements() ignores; turnRestrictions() is what reads them. */
 export function overpassQuery(box, profile) {
   const bbox = `${box.bottom},${box.left},${box.top},${box.right}`;
-  return `[out:json][timeout:${config.OVERPASS_QUERY_TIMEOUT_S}];(way${roadFilter(profile)}(${bbox});>;);out;`;
+  return `[out:json][timeout:${config.OVERPASS_QUERY_TIMEOUT_S}];`
+    + `(way${roadFilter(profile)}(${bbox});>;);out;`
+    + `relation["type"="restriction"](${bbox});out body;`;
 }
 
 async function postQuery(endpoint, query) {
@@ -396,15 +407,105 @@ export function buildGraph(elements, fetchBox, downloadBox) {
   return new Graph(ids, xs, ys, arcs);
 }
 
+/* -------------------------------------------------------- turn restrictions */
+/* Which (arrival arc, departure arc) pairs OSM forbids, as a Map from the
+   arriving arc to the set of departures it may not be followed by.
+
+   OSM states a restriction as three references: a `from` way, a `via`, and a
+   `to` way. Only the node-via form is read here. The way-via form describes a
+   movement across a short connecting way - the far side of a dual carriageway,
+   mostly - and pinning that onto simplified arcs correctly is a job of its own;
+   left undone, those movements simply stay unpriced.
+
+   A `no_*` restriction forbids exactly the stated pair. An `only_*` forbids
+   everything else out of the junction, which is the stronger statement and the
+   one that is easy to get backwards.
+
+   Arcs are matched by way id rather than by geometry: simplification merges a
+   chain of ways into one arc but keeps every way id it swallowed, so the arc
+   carrying `from` up to the junction is the one whose id list contains it. */
+export function turnRestrictions(g, elements) {
+  const nodeOfId = new Map();
+  for (let v = 0; v < g.N; v++) nodeOfId.set(g.id[v], v);
+
+  const waysOfArc = new Array(g.E);
+  for (let a = 0; a < g.E; a++) waysOfArc[a] = new Set(g.osmKey[a].split(','));
+
+  const forbidden = new Map();
+  const forbid = (a, b) => {
+    let set = forbidden.get(a);
+    if (!set) { set = new Set(); forbidden.set(a, set); }
+    set.add(b);
+  };
+
+  let applied = 0, skipped = 0;
+  for (const el of elements) {
+    if (el.type !== 'relation' || !el.members) continue;
+    const tags = el.tags || {};
+    // The general tag, then the car-specific ones that override it.
+    const kind = tags['restriction:motorcar'] ?? tags['restriction:motor_vehicle'] ?? tags.restriction;
+    if (!kind || !(kind.startsWith('no_') || kind.startsWith('only_'))) continue;
+    // "no left turn, except buses" is not a restriction on us.
+    if (tags.except && /motorcar|motor_vehicle/.test(tags.except)) continue;
+
+    let from = null, to = null, via = null, viaWay = false;
+    for (const m of el.members) {
+      if (m.role === 'from' && m.type === 'way') from = String(m.ref);
+      else if (m.role === 'to' && m.type === 'way') to = String(m.ref);
+      else if (m.role === 'via') {
+        if (m.type === 'node') via = m.ref; else viaWay = true;
+      }
+    }
+    if (from === null || to === null || via === null) { if (viaWay) skipped++; continue; }
+    const v = nodeOfId.get(via);
+    if (v === undefined) continue;   // the junction is outside the graph
+
+    const arrivals = [], departures = new Set();
+    for (let p = g.inStart[v]; p < g.inStart[v + 1]; p++) {
+      const a = g.inArcs[p];
+      if (waysOfArc[a].has(from)) arrivals.push(a);
+    }
+    for (let q = g.outStart[v]; q < g.outStart[v + 1]; q++) {
+      const b = g.outArcs[q];
+      if (waysOfArc[b].has(to)) departures.add(b);
+    }
+    // Either end may be missing: a restriction can name a way this profile
+    // filtered out, or one the simplifier absorbed on the far side of the
+    // junction. Nothing can be said then - and for an only_* in particular,
+    // saying it anyway would forbid every way out of the junction.
+    if (!arrivals.length || !departures.size) continue;
+
+    if (kind.startsWith('only_')) {
+      for (let q = g.outStart[v]; q < g.outStart[v + 1]; q++) {
+        const b = g.outArcs[q];
+        if (!departures.has(b)) for (const a of arrivals) forbid(a, b);
+      }
+    } else {
+      for (const b of departures) for (const a of arrivals) forbid(a, b);
+    }
+    applied++;
+  }
+  console.info(`turn restrictions: ${applied} applied, ${skipped} via-way ones skipped`);
+  return forbidden;
+}
+
 /* ------------------------------------------------------ required marking */
-/* Arcs with at least `minInsideM` of their length inside the drawn shape -
-   the shape, not its bounding box: a circle drawn around a village must not
-   drag in the roads that merely fall inside the enclosing square.
+/* Arcs far enough inside the drawn shape - the shape, not its bounding box: a
+   circle drawn around a village must not drag in the roads that merely fall
+   inside the enclosing square.
+
+   "Far enough" is two tests, either of which admits the arc: `minInsideM`
+   metres of it are inside, or `minFraction` of it is. The metre test is there
+   to keep a motorway that clips a corner out. On its own it also throws away
+   every arc shorter than it, however completely it lies in the shape - and the
+   short arcs are the links that hold a junction together, so losing them turns
+   junctions into dead ends and the route starts turning round mid-street. The
+   fraction test is what keeps those.
 
    The inside *fraction* is measured in degrees then scaled by the arc's metric
    length. Locally the degree-to-metre scale is constant, so this is accurate
    without a projection round trip. */
-export function markRequired(g, area, minInsideM) {
+export function markRequired(g, area, minInsideM, minFraction = config.REQUIRED_MIN_INSIDE_FRACTION) {
   const regions = area.regions;
   const boxes = regions.map((rings) => ringBounds(rings[0]));
   // The box round the lot, for the cheap reject that runs against every arc.
@@ -439,7 +540,8 @@ export function markRequired(g, area, minInsideM) {
       degInside += insideLengthDeg(geom, regions[k], boxes[k]);
     }
     degInside = Math.min(degInside, degTotal);
-    if (g.length[a] * (degInside / degTotal) >= minInsideM) required[a] = 1;
+    const fraction = degInside / degTotal;
+    if (fraction >= minFraction || g.length[a] * fraction >= minInsideM) required[a] = 1;
   }
   return required;
 }
@@ -490,7 +592,7 @@ export function coverageToDict(r) {
 const round = (v, d) => Math.round(v * 10 ** d) / 10 ** d;
 
 /* Fetch, mark required arcs and prune to the largest strongly connected
-   component. Returns { graph, required, report }. */
+   component. Returns { graph, required, restricted, report }. */
 export async function prepare(area, { bufferM, snapDeg, minInsideM,
                                       includePrivate = false, progress = null, cache = null }) {
   const say = progress || (() => {});
@@ -542,7 +644,7 @@ export async function prepare(area, { bufferM, snapDeg, minInsideM,
     throw new NoRoadsError('no drivable roads inside the drawn area - try a larger area');
   }
   console.info(`required ${requiredArcs.length} arcs; ${coverageSummary(report)}`);
-  return { graph: H, required, report };
+  return { graph: H, required, restricted: turnRestrictions(H, elements), report };
 }
 
 /* Graph node closest to a point, among `candidates` (a node mask) if given.

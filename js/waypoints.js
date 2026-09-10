@@ -24,7 +24,7 @@
    even on a different approach, the router still has to drive the street the
    waypoint sits on. */
 
-import { pointAlong } from './geo.js';
+import { haversineM, pointAlong } from './geo.js';
 import { Dijkstra } from './graph.js';
 import { circuitNodes } from './euler.js';
 
@@ -34,7 +34,8 @@ import { circuitNodes } from './euler.js';
    Prefix sums make testing each candidate O(1), so the cost of a leg is one
    Dijkstra regardless of how far it extends. `cutoffSeconds` keeps each search
    local, which is worth 5-20x on this loop. */
-export function reduceTour(g, circuit, { maxLegMetres, maxLegArcs, cutoffSeconds, margin, scale, progress = null }) {
+export function reduceTour(g, circuit, { maxLegMetres, maxLegArcs, cutoffSeconds, margin, scale,
+                                         turnaroundFraction = 0.9, progress = null }) {
   if (!circuit.length) return [];
   const say = progress || (() => {});
   const nodes = circuitNodes(g, circuit);
@@ -111,6 +112,7 @@ export function reduceTour(g, circuit, { maxLegMetres, maxLegArcs, cutoffSeconds
     }
 
     const arc = circuit[j - 1];
+    const previous = waypoints[waypoints.length - 1];
     let lon, lat, street;
     if (j === m) {
       // Last leg: finish at the tour's end node, which is where the driver
@@ -119,13 +121,23 @@ export function reduceTour(g, circuit, { maxLegMetres, maxLegArcs, cutoffSeconds
       // spans no arcs at all - 0 km, and an empty GPX segment.
       lon = g.x[nodes[m]]; lat = g.y[nodes[m]]; street = 'finish';
     } else {
-      [lon, lat] = pointAlong(g.geom[arc], 0.5);
+      // Nearly at the far end when the tour is about to drive this same street
+      // back the other way, halfway otherwise. See WAYPOINT_TURNAROUND_FRACTION.
+      const turnsBack = g.reciprocal[arc] === circuit[j];
+      [lon, lat] = pointAlong(g.geom[arc], turnsBack ? turnaroundFraction : 0.5);
+      // A circular way - the turning head of a cul-de-sac - starts and ends at
+      // the same junction, so it has no reciprocal to recognise and driving it
+      // twice lands both waypoints on the same spot anyway. Any interior point
+      // of an arc forces that arc and no other, so move along it instead.
+      if (haversineM(lon, lat, previous.lon, previous.lat) < 1) {
+        [lon, lat] = pointAlong(g.geom[arc], turnsBack ? 1 - turnaroundFraction : turnaroundFraction);
+      }
       street = g.streetName(arc);
     }
-    // cum_* are measured at arc boundaries while the point sits mid-arc, so
-    // each is up to half an arc ahead of the marker. The offset is the same
-    // at both ends of a leg, so leg distances stay right and the total sums
-    // exactly to the tour length.
+    // cum_* are measured at arc boundaries while the point sits along the arc,
+    // so each is up to an arc behind the marker. The offset is much the same at
+    // both ends of a leg, so leg distances stay close and the total sums exactly
+    // to the tour length.
     waypoints.push({
       lon, lat, node: nodes[j], arc, arcIndex: j,
       cumSeconds: preSecs[j], cumMetres: preLen[j], street,

@@ -5,7 +5,7 @@
 
 // Bump on ANY algorithm change, or the result cache will serve stale routes
 // and you will chase phantom bugs.
-export const ALGO_VERSION = '9';
+export const ALGO_VERSION = '10';
 
 // -------------------------------------------------------------------- basemap
 // Throw away key for this project - an actual human comment
@@ -133,9 +133,18 @@ export function fetchBufferM(areaKm2) {
 // of being simplified away, which keeps boundary streets connected.
 export const DOWNLOAD_MARGIN_M = 500;
 
-// An arc counts as "required" only if this much of it lies inside the shape,
-// so a motorway clipping a corner is not dragged in.
+// An arc counts as "required" if this much of it lies inside the shape, so a
+// motorway clipping a corner is not dragged in.
 export const REQUIRED_MIN_INSIDE_M = 30;
+
+// ...or if this much of it *proportionally* lies inside, which is the test that
+// matters for a short arc. The metre threshold alone can never be met by an arc
+// shorter than it, so on its own it silently drops every short link - and the
+// links that stitch a junction together are exactly the short ones. Losing them
+// turns a junction into a dead end and the route turns round in the middle of a
+// street. Measured over 39 km2 of Bratislava: arcs 30 m and over were driven
+// 99-100% of the time, arcs under 30 m only 55%.
+export const REQUIRED_MIN_INSIDE_FRACTION = 0.5;
 
 // Snap the queried bbox outward to this grid so nearby drags share one Overpass
 // response in the cache.
@@ -162,6 +171,21 @@ export const WAYPOINT_DIJKSTRA_CUTOFF_S = 900;
 // a router will pick it. 0 disables the (costly) re-check. EMPIRICAL.
 export const WAYPOINT_MARGIN = 0.05;
 
+/* How far along a street to put its waypoint when the drive turns round at the
+   far end of it, instead of the usual halfway.
+
+   Halfway is wrong in that one case for two reasons. The street is about to be
+   driven back the other way, and the halfway point of a street is the same
+   place whichever way you drive it - so both waypoints land on the same spot,
+   and a router handed two identical route points drops one of them and the
+   return pass with it. And halfway is as far as it asks the driver to go, so
+   the last stretch up to the turning point is never actually required.
+
+   Near the far end fixes both. Not *at* it: a waypoint on the junction itself
+   is ambiguous across every branch meeting there, which is the whole reason
+   waypoints sit mid-street. */
+export const WAYPOINT_TURNAROUND_FRACTION = 0.9;
+
 // ------------------------------------------------------------------- sessions
 // Sessions are cut at chunk boundaries. A chunk is a short run of waypoints -
 // a few minutes of driving - so a session never ends in the middle of a
@@ -183,6 +207,43 @@ export const ONEWAY_TIME_BUDGET_S = 25;
 // Drive both directions of every road? Off by default: one pass is half the
 // driving. Exact when on, heuristic when off.
 export const BOTH_DIRECTIONS_DEFAULT = false;
+
+// ---------------------------------------------------------------------- turns
+/* A junction is a place where some movements are not allowed, and a route that
+   ignores that is a route nobody can drive. The solver therefore runs on a
+   graph whose arcs are *turns* (see turns.js), and these are what a turn costs.
+
+   They are prices, not prohibitions. Making an illegal turn impossible would
+   mean deleting it from the graph, and a deleted turn can strand a street
+   behind it - the route would then either fail outright or quietly stop
+   covering that street, which is worse than a route with one awkward turn in
+   it. Priced high enough, the solver goes round the block wherever going round
+   the block is possible at all, and only takes the turn when there is genuinely
+   no other way in. */
+
+// Anything sharper than this counts as doubling back rather than turning.
+export const UTURN_DEGREES = 150;
+
+/* What the solver will spend, in seconds of extra driving, rather than double
+   back at a junction. A dead end pays nothing: there is no alternative there,
+   and charging for it would only distort the routes around it.
+
+   EMPIRICAL, and this is the knee. Swept over 39 km2 of Bratislava, counting
+   the U-turns left at junctions against the length of the drive:
+
+       penalty    20 s     45 s     90 s    240 s
+       U-turns      67       44       36       33
+       drive     553 km   561 km   566 km   580 km
+
+   Below the knee the route still doubles back where a short loop would have
+   done instead; above it, the last few U-turns are ones no loop can replace and
+   the extra spend buys almost nothing. */
+export const UTURN_PENALTY_S = 90;
+
+// The same for a turn an OSM restriction forbids outright (no_left_turn,
+// only_straight_on and friends). Far higher, because unlike a U-turn this one
+// is signposted.
+export const RESTRICTED_TURN_PENALTY_S = 900;
 
 // --------------------------------------------------------------------- solver
 export const MCF_TIME_SCALE = 10;   // travel_time seconds -> integer deciseconds
