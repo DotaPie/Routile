@@ -246,7 +246,9 @@
     <div id="legend" class="legend hidden" role="list" aria-label="Sessions"></div>
 
     <!-- Loading a file is a deliberate act with a deliberate answer, so when it
-         fails it says so over the map rather than in a line down the panel. -->
+         fails it says so over the map rather than in a line down the panel. The
+         same box asks before anything destructive, with Cancel shown alongside
+         and the button on the right renamed to whatever is about to happen. -->
     <div id="map-alert" class="map-alert hidden" role="alertdialog" aria-modal="false"
          aria-labelledby="map-alert-text">
       <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -254,7 +256,10 @@
         <path d="M12 10v4.2"/><circle cx="12" cy="17.2" r="0.9" fill="currentColor" stroke="none"/>
       </svg>
       <p id="map-alert-text"></p>
-      <button id="map-alert-close" type="button">Dismiss</button>
+      <div class="map-alert-actions">
+        <button id="map-alert-cancel" class="hidden" type="button">Cancel</button>
+        <button id="map-alert-close" type="button">Dismiss</button>
+      </div>
     </div>
   </main>
 </div>

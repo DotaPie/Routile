@@ -267,7 +267,9 @@ html, body {
 /* A start is on the map, so the pin glyph wears the accent. Not while the tool
    is armed - the button is accent-filled and the glyph would vanish into it. */
 .tool.has-start:not(.active) svg { color: var(--accent); }
-.tool.danger:hover:not(:disabled) { background: var(--bad-soft); color: var(--bad); }
+/* Filled, the way Subtract is filled when it is armed: the two buttons that
+   take something away answer to the same red. */
+.tool.danger:hover:not(:disabled) { background: var(--bad); color: var(--on-bad); }
 .tool:disabled { opacity: 0.38; cursor: default; }
 .tool:disabled:hover { background: transparent; color: var(--ink-2); }
 
@@ -299,6 +301,7 @@ html, body {
   font-size: 13px; line-height: 1.5;
   color: var(--bad);
 }
+.map-alert-actions { display: flex; gap: 8px; }
 .map-alert button {
   font: inherit; font-size: 12.5px; font-weight: 560;
   color: var(--bad);
@@ -310,6 +313,13 @@ html, body {
 }
 .map-alert button:hover { background: var(--bad-line); }
 .map-alert button:focus-visible { outline: 2px solid var(--bad); outline-offset: 2px; }
+/* Backing out is the quiet option, so it wears none of the red: what it does is
+   nothing. Left of the button that acts, and where the focus lands. */
+#map-alert-cancel {
+  color: var(--ink-2); background: transparent; border-color: var(--line-2);
+}
+#map-alert-cancel:hover { background: var(--hover); color: var(--ink); }
+#map-alert-cancel:focus-visible { outline-color: var(--ink-3); }
 
 /* -------------------------------------------------------------- dropzone */
 /* Dashed rather than solid, the one border convention that reads as "put

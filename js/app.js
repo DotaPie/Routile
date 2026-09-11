@@ -48,6 +48,7 @@ const state = {
   progress: null,      // {phase, message, fraction} of the running job
   started: 0,
   ticker: null,
+  confirm: null,       // what the map alert's Accept button runs, if it has one
 };
 
 /* ------------------------------------------------------------------ map */
@@ -722,7 +723,12 @@ for (const [key, id] of Object.entries(TOOL_BUTTONS)) {
 }
 setMode('rect');
 
-$('clear-zones').onclick = () => clearZones();
+// Clear throws away an outline that took a steady hand and a route that took a
+// download and a solve, and nothing here undoes it, so it asks first.
+$('clear-zones').onclick = () => {
+  showMapAlert('Clear the drawn zones, the start pin and the computed route?',
+    { accept: clearZones });
+};
 
 // Google's /@lat,lon,zoomz form, so the other map opens on what is on this one.
 $('open-gmaps').onclick = () => {
@@ -1127,15 +1133,32 @@ async function acceptFiles(files) {
 
 // Refusing a file is worth interrupting for: you dropped something and nothing
 // happened, and a line at the foot of the panel is easy to miss.
-function showMapAlert(msg) {
+//
+// The same box asks before anything destructive: pass `accept` and it grows a
+// Cancel button, renames the other one, and runs the callback only if that one
+// is pressed. Cancel takes the focus, so a stray Enter backs out rather than
+// going through with it.
+function showMapAlert(msg, { accept = null } = {}) {
   $('map-alert-text').textContent = msg;
+  state.confirm = accept;
+  $('map-alert-close').textContent = accept ? 'Accept' : 'Dismiss';
+  $('map-alert-cancel').classList.toggle('hidden', !accept);
   $('map-alert').classList.remove('hidden');
-  $('map-alert-close').focus();
+  $(accept ? 'map-alert-cancel' : 'map-alert-close').focus();
 }
 
-function hideMapAlert() { $('map-alert').classList.add('hidden'); }
+// Dismissing, cancelling and Escape are the same answer: no.
+function hideMapAlert() {
+  state.confirm = null;
+  $('map-alert').classList.add('hidden');
+}
 
-$('map-alert-close').addEventListener('click', hideMapAlert);
+$('map-alert-close').addEventListener('click', () => {
+  const accept = state.confirm;
+  hideMapAlert();
+  if (accept) accept();
+});
+$('map-alert-cancel').addEventListener('click', hideMapAlert);
 document.addEventListener('keydown', (ev) => {
   if (ev.key !== 'Escape') return;
   hideMapAlert();
