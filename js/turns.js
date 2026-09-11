@@ -37,33 +37,72 @@
      would drop roads that are perfectly drivable. Pricing keeps the guarantee
      that a route exists and merely makes the bad ones last resorts. */
 
-import { MCF_TIME_SCALE, RESTRICTED_TURN_PENALTY_S, UTURN_DEGREES, UTURN_PENALTY_S } from './config.js';
-import { turnAngle } from './geo.js';
+import {
+  MCF_TIME_SCALE, RESTRICTED_TURN_PENALTY_S, SHARP_TURN_PENALTY_S,
+  UTURN_DEGREES, UTURN_PENALTY_S, UTURN_TAPER_DEGREES,
+} from './config.js';
+import { startRun, turnAngle } from './geo.js';
 import { Graph } from './graph.js';
 
-/* Does leaving on `b` undo arriving on `a`?
+/* What kind of manoeuvre a turn arc is, for reporting. Bit flags: a restricted
+   turn can also be a reversal.
 
-   The reciprocal test catches the ordinary case - the same strip of tarmac the
-   other way - and the angle catches the rest: a hairpin between two separately
-   mapped ways, or the far carriageway of a dual road, which are U-turns to
-   drive even though no single arc is being reversed. */
-function doublesBack(g, a, b, arrival) {
-  if (g.reciprocal[a] === b) return true;
-  if (!arrival) return false;
-  const departure = g.bearings(b);
-  return departure ? Math.abs(turnAngle(arrival[1], departure[0])) >= UTURN_DEGREES : false;
-}
+   TURN_TURNAROUND is the one that is *not* a complaint - doubling back where
+   there is nothing else to do. Counting those in with the rest is what makes a
+   report of a clean route look like a report of a broken one. */
+export const TURN_SHARP = 1;
+export const TURN_REVERSAL = 2;
+export const TURN_RESTRICTED = 4;
+export const TURN_TURNAROUND = 8;
 
-/* The first two distinct points of an arc, so a turn onto it can be given a
-   bearing and a name without being given a length. */
-function stub(geom) {
-  const n = geom.length / 2;
-  for (let i = 1; i < n; i++) {
-    if (geom[2 * i] !== geom[0] || geom[2 * i + 1] !== geom[1]) {
-      return Float64Array.of(geom[0], geom[1], geom[2 * i], geom[2 * i + 1]);
-    }
+/* Is `b` the arc `a` came in on, driven back the other way?
+
+   Not "is b the reciprocal of a": Graph.reciprocal picks one partner per arc,
+   and where a street is mapped twice - two identical parallel ways, which OSM
+   has plenty of - the second copy is the same strip of tarmac and is not the
+   one it picked. Measured over 39 km2 that let 20 arcs' worth of genuine
+   reversal through priced as though it were a hairpin. So ask the question
+   directly, on the same terms Graph.reciprocal asks it.
+
+   `a !== b` is for circular ways, which simplify to a self-loop and so are their
+   own predecessor and successor. Driving a loop twice the same way round is not
+   doubling back; driving the other direction of it is, and that is a different
+   arc. */
+const reverses = (g, a, b) =>
+  a !== b
+  && g.head[b] === g.tail[a]
+  && g.osmKey[b] === g.osmKey[a]
+  && Math.abs(g.length[b] - g.length[a]) < 0.5;
+
+/* Seconds the route is charged for turning from `a` onto `b`, and which kind of
+   manoeuvre that is.
+
+   Two tiers, and the distinction between them is the whole point. Coming back
+   out on the same strip of tarmac is a U-turn in the middle of a street,
+   whatever the geometry says the angle is. Everything else that comes out sharp
+   is a turn onto *different* tarmac, which is a different manoeuvre and a much
+   smaller problem: it is how you legally reverse direction through a slip lane,
+   round a hairpin, or across the gap in a dual carriageway.
+
+   `escape` says whether the driver has anywhere else to go. Charging for a
+   manoeuvre nobody can avoid buys nothing and distorts the cost of every route
+   that leads to it. */
+function turnPrice(g, a, b, arrival, escape) {
+  if (reverses(g, a, b)) {
+    return escape.other ? { seconds: UTURN_PENALTY_S, kind: TURN_REVERSAL }
+                        : { seconds: 0, kind: TURN_TURNAROUND };
   }
-  return Float64Array.of(geom[0], geom[1], geom[0], geom[1]);
+  if (!arrival) return { seconds: 0, kind: 0 };
+  const departure = g.bearings(b);
+  if (!departure) return { seconds: 0, kind: 0 };
+  const angle = Math.abs(turnAngle(arrival[1], departure[0]));
+  if (angle <= UTURN_TAPER_DEGREES) return { seconds: 0, kind: 0 };
+  const sharp = angle >= UTURN_DEGREES;
+  if (!escape.any) return { seconds: 0, kind: sharp ? TURN_TURNAROUND : 0 };
+  // Ramp to the full price at 180 rather than switching on at a threshold, so
+  // a junction drawn slightly differently is not priced completely differently.
+  const t = Math.min((angle - UTURN_TAPER_DEGREES) / (180 - UTURN_TAPER_DEGREES), 1);
+  return { seconds: SHARP_TURN_PENALTY_S * t, kind: sharp ? TURN_SHARP : 0 };
 }
 
 /* Expand `g`. `restricted` is the Map from osm.turnRestrictions(), or null. */
@@ -80,31 +119,43 @@ export function expandTurns(g, { restricted = null } = {}) {
       length: g.length[a], travel: g.travel[a], geom: g.geom[a],
       osmids: g.osmKey[a] ? g.osmKey[a].split(',') : [],
       names: g.names[a], refs: g.refs[a], highway: g.highway[a],
-      cost: g.cost[a],
+      connector: g.connector[a], cost: g.cost[a],
     };
   }
 
   // One stub per road, not one per turn onto it: a road is departed from once
-  // for every road arriving at the same junction.
+  // for every road arriving at the same junction. The stub runs far enough to
+  // carry the bearing the road actually leaves on, not the first vertex.
   const stubs = new Array(E);
-  for (let a = 0; a < E; a++) stubs[a] = stub(g.geom[a]);
+  for (let a = 0; a < E; a++) stubs[a] = startRun(g.geom[a]);
 
-  let priced = 0;
+  const kinds = new Array(E).fill(0);   // stays index-aligned with `arcs`
+  const tally = { reversals: 0, sharp: 0, restricted: 0, turnarounds: 0 };
   for (let v = 0; v < g.N; v++) {
-    // A junction with one way out is a dead end, and turning round there is the
-    // only thing a driver can do. Charging for it would price a street by how
-    // it happens to be mapped rather than by how it drives.
-    const forced = g.outDegree(v) === 1;
+    // Somewhere else to go? A junction with one way out is a dead end, and
+    // turning round there is the only thing a driver can do; charging for it
+    // would price a street by how it happens to be mapped rather than by how it
+    // drives. `other` is the same question for a reversal specifically - the
+    // way back does not count as an alternative to itself.
+    const anyEscape = g.outDegree(v) > 1;
     for (let p = g.inStart[v]; p < g.inStart[v + 1]; p++) {
       const a = g.inArcs[p];
       const arrival = g.bearings(a);
       const banned = restricted ? restricted.get(a) : null;
+      let otherEscape = false;
+      for (let q = g.outStart[v]; q < g.outStart[v + 1]; q++) {
+        if (!reverses(g, a, g.outArcs[q])) { otherEscape = true; break; }
+      }
+      const escape = { any: anyEscape, other: otherEscape };
       for (let q = g.outStart[v]; q < g.outStart[v + 1]; q++) {
         const b = g.outArcs[q];
-        let seconds = 0;
-        if (!forced && doublesBack(g, a, b, arrival)) seconds += UTURN_PENALTY_S;
-        if (banned && banned.has(b)) seconds += RESTRICTED_TURN_PENALTY_S;
-        if (seconds) priced++;
+        let { seconds, kind } = turnPrice(g, a, b, arrival, escape);
+        if (banned && banned.has(b)) { seconds += RESTRICTED_TURN_PENALTY_S; kind |= TURN_RESTRICTED; }
+        if (kind & TURN_REVERSAL) tally.reversals++;
+        else if (kind & TURN_SHARP) tally.sharp++;
+        else if (kind & TURN_TURNAROUND) tally.turnarounds++;
+        if (kind & TURN_RESTRICTED) tally.restricted++;
+        kinds.push(kind);
         arcs.push({
           u: 2 * a + 1, v: 2 * b,
           length: 0, travel: 0, geom: stubs[b],
@@ -120,6 +171,7 @@ export function expandTurns(g, { restricted = null } = {}) {
   }
 
   const graph = new Graph(ids, xs, ys, arcs);
+  const turnKind = Uint8Array.from(kinds);
   // Reciprocity is a fact about roads, not about turns: two turn arcs between
   // the same pair of nodes are not two ways down one street. Graph works it out
   // from way ids and length, which a turn has neither of, so it is restated
@@ -130,8 +182,10 @@ export function expandTurns(g, { restricted = null } = {}) {
   graph.reciprocal = reciprocal;
 
   console.info(`turn graph: ${graph.N} nodes / ${graph.E} arcs `
-    + `(${E} roads, ${graph.E - E} turns, ${priced} of them priced)`);
-  return { graph, roadArcs: E, roads: g };
+    + `(${E} roads, ${graph.E - E} turns; ${tally.reversals} priced as reversals, `
+    + `${tally.sharp} as hairpins, ${tally.restricted} forbidden, `
+    + `${tally.turnarounds} free at a dead end)`);
+  return { graph, roadArcs: E, roads: g, turnKind };
 }
 
 /* A road-arc mask as the expanded graph wants it, and traversal counts back
@@ -161,11 +215,22 @@ export function entryNode(exp, v, mult) {
   return -1;
 }
 
-/* How many turns the tour makes that it would rather not have - for the log,
-   and for anyone changing the penalties above. */
-export function countPricedTurns(exp, circuit) {
-  const t = exp.graph;
-  let n = 0;
-  for (const a of circuit) if (a >= exp.roadArcs && t.cost[a] > 1) n++;
-  return n;
+/* The turns the tour actually makes that it would rather not have, by kind -
+   for the log, and for anyone changing the penalties in config.js.
+
+   `reversals` is the number that matters: a route with any of them at all is
+   one where the road layout left the solver no way round, and a route where
+   that count is climbing is one where something has regressed. */
+export function turnAudit(exp, walk) {
+  const kind = exp.turnKind;
+  const out = { reversals: 0, sharp: 0, restricted: 0, turnarounds: 0 };
+  for (const a of walk) {
+    if (a < exp.roadArcs) continue;
+    const k = kind[a];
+    if (k & TURN_REVERSAL) out.reversals++;
+    else if (k & TURN_SHARP) out.sharp++;
+    else if (k & TURN_TURNAROUND) out.turnarounds++;
+    if (k & TURN_RESTRICTED) out.restricted++;
+  }
+  return out;
 }

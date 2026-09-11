@@ -33,27 +33,58 @@ export class NoRoadsError extends Error {}
    streets a car may use.
 
    `includePrivate` relaxes the access rules. Left off, the query skips ways
-   tagged access=private and the service roads that are nearly always the same
-   thing: driveways, alleys, parking aisles and yards. Turned on, all of those
+   tagged access=private and every highway=service, which is where the
+   driveways, alleys, parking aisles and yards live. Turned on, all of those
    come back, which is what you want for an industrial estate or a gated
-   development and not what you want for a sweep of the public streets. */
+   development and not what you want for a sweep of the public streets.
+
+   Note what is *not* here any more: OSMnx also drops any way carrying
+   service=driveway and friends, whatever kind of highway it is. That reads a
+   subtag as though it were the tag. A street tagged highway=residential plus
+   service=parking_aisle - a residential street with parking bays along it, and
+   there are several in any housing estate - is a public street, and dropping it
+   left holes in the coverage that looked exactly like bugs. Every genuinely
+   private service road is already excluded by the highway clause. */
 const HIGHWAY_NOT_DRIVEN =
   'abandoned|bridleway|bus_guideway|busway|construction|corridor|cycleway|elevator|'
   + 'escalator|footway|path|pedestrian|planned|platform|proposed|raceway|razed|steps|track';
-const SERVICE_PRIVATE = 'alley|driveway|emergency_access|parking|parking_aisle|private';
 
 export function roadFilter({ includePrivate = false } = {}) {
   const parts = ['["highway"]', '["area"!~"yes"]'];
   if (!includePrivate) parts.push('["access"!~"private"]');
   parts.push(`["highway"!~"${includePrivate ? HIGHWAY_NOT_DRIVEN : HIGHWAY_NOT_DRIVEN + '|service'}"]`);
   parts.push('["motor_vehicle"!~"no"]', '["motorcar"!~"no"]');
-  if (!includePrivate) parts.push(`["service"!~"${SERVICE_PRIVATE}"]`);
   return parts.join('');
+}
+
+/* Roads downloaded so the route can *reach* things, never so it covers them.
+
+   Some streets are joined to the rest of the network only through a service
+   road. They are ordinary public streets - the ones measured were plain
+   highway=unclassified, a kilometre of them - but with the service roads
+   filtered out they sit in a component with no way in and no way out, the
+   reachability prune deletes them, and they read as missing coverage. No amount
+   of extra buffer fixes that, because it is not a boundary effect: they were
+   1.2 km inside the drawn shape.
+
+   So: fetch the service roads, and mark them as connectors. A connector is
+   drivable in every way an ordinary arc is, so it can carry a deadhead leg and
+   stitch an orphaned street back onto the network, but markRequired() never
+   asks for it, so turning this on adds nothing to what has to be driven.
+
+   Only *plain* service roads, though - highway=service with no service=* subtag
+   at all, which is the access road through an estate rather than a car-park
+   aisle or somebody's drive. In the area measured that is 20 ways against 38
+   parking aisles and 30 driveways, so it is a fifth of the service network
+   rather than all of it. */
+export function connectorFilter() {
+  return '["highway"="service"]["service"!~"."]["area"!~"yes"]'
+    + '["access"!~"private"]["motor_vehicle"!~"no"]["motorcar"!~"no"]';
 }
 
 /* Bump whenever overpassQuery() asks for something new, or a cache written by
    the old query will be served to the new code, missing whatever was added. */
-const QUERY_VERSION = 2;
+const QUERY_VERSION = 3;
 
 /* Two queries asking for different roads must not share one cached download. */
 export const profileKey = ({ includePrivate = false } = {}) =>
@@ -65,17 +96,27 @@ const REVERSED_VALUES = new Set(['-1', 'reverse', 'T']);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /* ----------------------------------------------------------------- fetching */
-/* The roads, and the turn restrictions over them.
+/* The roads, the connectors, and the turn restrictions over them.
 
-   The restrictions are a second, independent statement in the same query, so
-   they cost one round trip rather than two. They come back as relations, which
-   fromElements() ignores; turnRestrictions() is what reads them. */
+   Three statements in one query, so they cost one round trip rather than three.
+   The ways are unioned and printed, then `>;` pulls in the nodes they reference
+   - which has to come *after* the union rather than inside it, or it would only
+   recurse down from whichever way statement ran last. The restrictions come
+   back as relations, which fromElements() ignores; turnRestrictions() reads
+   them. */
 export function overpassQuery(box, profile) {
   const bbox = `${box.bottom},${box.left},${box.top},${box.right}`;
+  const ways = [`way${roadFilter(profile)}(${bbox});`];
+  if (useConnectors(profile)) ways.push(`way${connectorFilter()}(${bbox});`);
   return `[out:json][timeout:${config.OVERPASS_QUERY_TIMEOUT_S}];`
-    + `(way${roadFilter(profile)}(${bbox});>;);out;`
+    + `(${ways.join('')});out body;>;out skel qt;`
     + `relation["type"="restriction"](${bbox});out body;`;
 }
+
+/* Private mode already downloads every service road and requires it to be
+   driven, so there is nothing left for a connector to reach. */
+const useConnectors = ({ includePrivate = false } = {}) =>
+  config.INCLUDE_CONNECTORS && !includePrivate;
 
 async function postQuery(endpoint, query) {
   const control = new AbortController();
@@ -196,7 +237,7 @@ function push(map, key, value) {
   if (list) list.push(value); else map.set(key, [value]);
 }
 
-function fromElements(elements) {
+function fromElements(elements, connectors) {
   const coords = new Map();
   const ways = [];
   for (const el of elements) {
@@ -219,6 +260,9 @@ function fromElements(elements) {
       refs: tags.ref ? [String(tags.ref)] : [],
       highway: tags.highway ?? null,
       maxspeed: tags.maxspeed ?? null,
+      // Exactly what connectorFilter() asks for and roadFilter() does not: a
+      // plain service road, here to be driven through rather than covered.
+      connector: connectors && tags.highway === 'service' && !tags.service,
     };
     for (let i = 1; i < ids.length; i++) raw.addEdge({ u: ids[i - 1], v: ids[i], ...attrs, geom: null });
     if (!oneway) {
@@ -312,6 +356,9 @@ function simplify(raw) {
       names: unionSorted(segs.map((s) => s.names)),
       refs: unionSorted(segs.map((s) => s.refs)),
       highway: segs[0].highway,
+      // A merged run is only a connector if all of it is; where a service road
+      // runs on into a public street the whole arc is a street to be driven.
+      connector: segs.every((s) => s.connector),
       // Differing limits along a merged street cannot be trusted either way;
       // let the road type decide, as OSMnx does.
       maxspeed: speeds.size === 1 ? segs[0].maxspeed : null,
@@ -380,8 +427,8 @@ function assignTravelTimes(edges) {
 }
 
 /* ------------------------------------------------------------- assembly */
-export function buildGraph(elements, fetchBox, downloadBox) {
-  const raw = fromElements(elements);
+export function buildGraph(elements, fetchBox, downloadBox, profile = {}) {
+  const raw = fromElements(elements, useConnectors(profile));
   truncateToBox(raw, downloadBox);
   simplify(raw);
   truncateToBox(raw, fetchBox);
@@ -403,6 +450,7 @@ export function buildGraph(elements, fetchBox, downloadBox) {
   const arcs = raw.edges.map((e) => ({
     u: index.get(e.u), v: index.get(e.v), length: e.length, travel: e.travel,
     geom: e.geom, osmids: e.osmids, names: e.names, refs: e.refs, highway: e.highway,
+    connector: e.connector,
   }));
   return new Graph(ids, xs, ys, arcs);
 }
@@ -517,6 +565,9 @@ export function markRequired(g, area, minInsideM, minFraction = config.REQUIRED_
 
   const required = new Uint8Array(g.E);
   for (let a = 0; a < g.E; a++) {
+    // A connector is downloaded so the route can reach a street, not so it
+    // drives one. Where it sits is beside the point.
+    if (g.connector[a]) continue;
     const geom = g.geom[a];
     let gx0 = Infinity, gy0 = Infinity, gx1 = -Infinity, gy1 = -Infinity;
     for (let i = 0; i < geom.length; i += 2) {
@@ -565,10 +616,15 @@ export function coverageSummary(r) {
   const pct = r.centerline_km_in_area > 0 ? 100 * r.centerline_km_covered / r.centerline_km_in_area : 0;
   let text = `covers ${pct.toFixed(1)}% of roads in the drawn area `
     + `(${r.centerline_km_covered.toFixed(1)} of ${r.centerline_km_in_area.toFixed(1)} km)`;
+  // Deliberately vague about the cause, because it varies and guessing at it
+  // was worse than saying nothing: a one-way whose way back lies outside the
+  // fetch box, a street reachable only through a road this profile does not
+  // download, and a slip road you can leave but not re-enter all end up here,
+  // and they need completely different fixes.
   if (r.km_dropped_not_strongly_connected > 0.05) {
     const fragments = Math.max(r.strong_components - 1, 0);
-    text += ` - ${r.km_dropped_not_strongly_connected.toFixed(1)} km unreachable `
-      + `(one-ways leaving the area, ${fragments} disconnected fragments)`;
+    text += ` - ${r.km_dropped_not_strongly_connected.toFixed(1)} km could not be reached `
+      + `by car from the rest of the network (${fragments} separate fragments)`;
   }
   return text;
 }
@@ -603,8 +659,10 @@ export async function prepare(area, { bufferM, snapDeg, minInsideM,
   say('fetch', `downloading roads for ${fetchBox.areaKm2().toFixed(1)} km2`);
   const profile = { includePrivate };
   const elements = await fetchOverpass(downloadBox, { profile, cache, progress: say });
-  const G = buildGraph(elements, fetchBox, downloadBox);
-  console.info(`fetched ${G.N} nodes / ${G.E} arcs`);
+  const G = buildGraph(elements, fetchBox, downloadBox, profile);
+  let connectorArcs = 0;
+  for (let a = 0; a < G.E; a++) if (G.connector[a]) connectorArcs++;
+  console.info(`fetched ${G.N} nodes / ${G.E} arcs (${connectorArcs} connectors)`);
 
   const report = {
     area_km2: area.areaKm2(),

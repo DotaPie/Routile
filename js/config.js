@@ -5,7 +5,7 @@
 
 // Bump on ANY algorithm change, or the result cache will serve stale routes
 // and you will chase phantom bugs.
-export const ALGO_VERSION = '10';
+export const ALGO_VERSION = '11';
 
 // -------------------------------------------------------------------- basemap
 // Throw away key for this project - an actual human comment
@@ -100,6 +100,22 @@ export const AREA_CAP_KM2 = 50_000;
 // it on is a deliberate act - see roadFilter() in osm.js for exactly what it
 // admits.
 export const INCLUDE_PRIVATE_DEFAULT = false;
+
+/* Also download plain service roads - highway=service with no service=* subtag
+   - as *connectors*: drivable, so the route may pass along one, but never
+   required, so none of them is ever a street you have to cover.
+
+   Not a user setting, because there is nothing to weigh up. Without them, a
+   street whose only link to the network is a service road belongs to no
+   strongly connected component and is deleted, which reads as missing
+   coverage; with them, it is reachable. The cost is a slightly larger download
+   and a slightly larger graph, and no extra driving is ever required.
+
+   The one thing it can get wrong: a service road that is gated or private but
+   not tagged as either. A deadhead leg down one of those is a leg the driver
+   cannot take. Turn this off if that shows up. Bump QUERY_VERSION in osm.js if
+   you do, or the cached download will not match. */
+export const INCLUDE_CONNECTORS = true;
 
 // ---------------------------------------------------------------- OSM fetching
 // Fetch beyond the drawn shape so deadhead legs may leave it (what a human
@@ -219,31 +235,100 @@ export const BOTH_DIRECTIONS_DEFAULT = false;
    covering that street, which is worse than a route with one awkward turn in
    it. Priced high enough, the solver goes round the block wherever going round
    the block is possible at all, and only takes the turn when there is genuinely
-   no other way in. */
+   no other way in.
 
-// Anything sharper than this counts as doubling back rather than turning.
+   Three different manoeuvres look alike on a map and are not alike to drive,
+   so they are priced apart:
+
+     reversal   leaving on the same strip of tarmac you arrived on. This is the
+                U-turn in the middle of a street. Illegal almost everywhere,
+                and there is always a way round it in a connected network.
+     sharp      a turn of nearly 180 degrees onto *different* tarmac - a slip
+                lane, a hairpin, the far carriageway of a dual road. Awkward,
+                usually legal, and sometimes the only sane way to reverse
+                direction. Worth avoiding, not worth banning.
+     restricted a movement an OSM relation forbids outright. Signposted, so a
+                harder no than either of the above.
+
+   Pricing all three the same is what produced the earlier routes: a reversal
+   was cheap enough to take, and a legal hairpin was dear enough that the solver
+   preferred the reversal to the loop that would have replaced it. */
+
+/* How much of the road either side of a junction a turn is measured over.
+
+   The obvious rule - the first two distinct vertices - is wrong at any
+   micro-mapped junction, where the first vertex can be five metres away on a
+   stub angled into the give-way line. Over 39 km2, 2443 of 10678 arcs give a
+   different end bearing measured over 15 m than measured off that first
+   vertex, and 211 of them differ by more than 25 degrees. See endRun(). */
+export const BEARING_RUN_M = 15;
+
+// Anything sharper than this counts as doubling back rather than turning. Used
+// by the tour step's tie-breaks, and as the top of the taper below.
 export const UTURN_DEGREES = 150;
 
-/* What the solver will spend, in seconds of extra driving, rather than double
-   back at a junction. A dead end pays nothing: there is no alternative there,
-   and charging for it would only distort the routes around it.
+/* Where the sharp-turn price starts, rising linearly to its full value at 180.
 
-   EMPIRICAL, and this is the knee. Swept over 39 km2 of Bratislava, counting
-   the U-turns left at junctions against the length of the drive:
+   A hard threshold makes the whole thing hostage to how a junction happens to
+   be drawn: 149 degrees free, 151 degrees fully charged. Given the measurement
+   spread above, a cliff decides a couple of hundred junctions essentially at
+   random. A ramp does not. */
+export const UTURN_TAPER_DEGREES = 120;
 
-       penalty    20 s     45 s     90 s    240 s
-       U-turns      67       44       36       33
-       drive     553 km   561 km   566 km   580 km
+/* What the solver will spend, in seconds of extra driving, rather than leave a
+   street on the same tarmac it arrived on. A dead end pays nothing - turning
+   round is the only thing you can do there, and charging for it would only
+   distort the routes leading up to it.
 
-   Below the knee the route still doubles back where a short loop would have
-   done instead; above it, the last few U-turns are ones no loop can replace and
-   the extra spend buys almost nothing. */
-export const UTURN_PENALTY_S = 90;
+   Effectively a ban, and the sweep says so. Over 39 km2 of Bratislava, counting
+   the reversals left at places with somewhere else to go:
 
-// The same for a turn an OSM restriction forbids outright (no_left_turn,
-// only_straight_on and friends). Far higher, because unlike a U-turn this one
-// is signposted.
-export const RESTRICTED_TURN_PENALTY_S = 900;
+       penalty        90 s    300 s    900 s   1800 s   100000 s
+       one-way  rev      8        1        1        1          1
+                drive 520 km  533 km   533 km   533 km    532 km
+       both     rev     16       11       11       11         11
+                drive 574 km  585 km   585 km   585 km    585 km
+
+   Everything from 300 s up gives the identical answer, including a control run
+   at 100000 s - 28 hours of detour, which no route would ever pay. What is left
+   at that point is forced by the road layout: a street whose junction has one
+   other exit and no way back to it, where the arrival can only ever be paired
+   with the reversal. No price removes those, and a price high enough to try
+   would only make the rest of the route worse.
+
+   1800 s sits well inside the flat region rather than at its edge, because a
+   denser or sparser network than this one will need a different detour to buy
+   its way out, and there is nothing to lose by having headroom: the flow only
+   pays this where it has no alternative at all. The 13 km it costs against
+   90 s is extra passes over streets already driven, which is the trade the
+   whole change is for. */
+export const UTURN_PENALTY_S = 1800;
+
+/* The same for a hairpin onto different tarmac - a slip lane, a tight loop, the
+   far carriageway of a dual road. Legal, so this is a preference rather than a
+   ban, and it turns out to be nearly free:
+
+       penalty     0 s     45 s     90 s    240 s
+       one-way  10 hp    3 hp     1 hp     0 hp     531 / 534 / 533 / 534 km
+       both     17 hp    6 hp     1 hp     0 hp     582 / 580 / 585 / 585 km
+
+   Under 1% of the drive across the whole range. 90 s takes out nine in ten of
+   them for nothing; 240 s takes out the rest, and is not used because four
+   minutes of detour to avoid a legal turn is the kind of thing that looks
+   sensible on this network and absurd on another.
+
+   What matters far more than the value is that this is a *separate* price from
+   the one above. When there was only one U-turn price, it had to be low enough
+   not to distort the hairpins, which made it too low to stop the reversals -
+   and at some junctions it actively preferred an illegal reversal to the legal
+   hairpin that would have replaced it, because both cost the same and the
+   reversal was the shorter way round. */
+export const SHARP_TURN_PENALTY_S = 90;
+
+// A turn an OSM restriction forbids (no_left_turn, only_straight_on and
+// friends). Above the reversal price: both are illegal, but this one is on a
+// sign, so where the solver must break one rule it should break the other one.
+export const RESTRICTED_TURN_PENALTY_S = 3600;
 
 // --------------------------------------------------------------------- solver
 export const MCF_TIME_SCALE = 10;   // travel_time seconds -> integer deciseconds

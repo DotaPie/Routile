@@ -6,6 +6,8 @@
    * An arc *geometry* is a flat Float64Array [lon0, lat0, lon1, lat1, ...],
      always oriented tail -> head. Flat because there are tens of thousands. */
 
+import { BEARING_RUN_M } from './config.js';
+
 export const EARTH_R = 6_371_008.8;   // mean radius, for buffers and areas
 export const OSM_EARTH_R = 6_371_009;  // what OSMnx uses for edge lengths
 
@@ -72,32 +74,65 @@ export function pointAlong(geom, frac = 0.5) {
   return [geom[n - 2], geom[n - 1]];
 }
 
-/* The first (or last) two distinct vertices of a line, as [x0, y0, x1, y1]. */
-function endSegment(geom, atStart) {
+/* How the road runs at one end of an arc, as [x0, y0, x1, y1] *in the
+   direction of travel*: leaving the start vertex, or arriving at the end one.
+   Either way it spans about `runM` metres.
+
+   The direction matters and is easy to get backwards. Both ends are walked
+   outward from the vertex, because that is where the measurement has to be
+   anchored, but the segment for the far end is then handed back reversed, so
+   the bearing it yields is the one a car arrives on rather than the one it
+   would leave on going the other way. Get that wrong and every turn angle comes
+   out 180 degrees off: straight on reads as a U-turn and a U-turn reads as
+   straight on.
+
+   Not the first two distinct vertices, which is the obvious reading and the
+   wrong one. At a micro-mapped junction the first vertex is often a few metres
+   away, on a stub angled into the give-way line rather than along the road, and
+   a bearing taken off it is not the bearing a driver turns through. Measured
+   over 15 m instead of 5 m the same movement can come out 25 degrees sharper -
+   which is the difference between a turn the solver prices and one it does not.
+
+   An arc shorter than `runM` simply uses all of itself. */
+function endRun(geom, atStart, runM) {
   const n = geom.length / 2;
   if (n < 2) return null;
-  if (atStart) {
-    const ax = geom[0], ay = geom[1];
-    for (let i = 1; i < n; i++) {
-      const bx = geom[2 * i], by = geom[2 * i + 1];
-      if (bx !== ax || by !== ay) return [ax, ay, bx, by];
+  const ax = atStart ? geom[0] : geom[2 * n - 2];
+  const ay = atStart ? geom[1] : geom[2 * n - 1];
+  const oriented = (bx, by) => (atStart ? [ax, ay, bx, by] : [bx, by, ax, ay]);
+  let px = ax, py = ay, run = 0;
+  for (let k = 1; k < n; k++) {
+    const i = atStart ? k : n - 1 - k;
+    const qx = geom[2 * i], qy = geom[2 * i + 1];
+    const step = haversineM(px, py, qx, qy);
+    if (step === 0) continue;
+    if (run + step >= runM) {
+      // Interpolate rather than take the vertex beyond: over a long straight
+      // first segment those two are different directions, and the interpolated
+      // one is the one the road actually leaves the junction on.
+      const t = (runM - run) / step;
+      return oriented(px + (qx - px) * t, py + (qy - py) * t);
     }
-  } else {
-    const bx = geom[2 * n - 2], by = geom[2 * n - 1];
-    for (let i = n - 2; i >= 0; i--) {
-      const ax = geom[2 * i], ay = geom[2 * i + 1];
-      if (ax !== bx || ay !== by) return [ax, ay, bx, by];
-    }
+    run += step;
+    px = qx; py = qy;
   }
-  return null;
+  return run > 0 ? oriented(px, py) : null;
 }
 
 /* [departure bearing at the start, arrival bearing at the end], or null. */
-export function arcBearings(geom) {
-  const first = endSegment(geom, true);
-  const last = endSegment(geom, false);
+export function arcBearings(geom, runM = BEARING_RUN_M) {
+  const first = endRun(geom, true, runM);
+  const last = endRun(geom, false, runM);
   if (!first || !last) return null;
   return [bearing(...first), bearing(...last)];
+}
+
+/* The first `runM` metres of an arc as a two-point line - the geometry a turn
+   onto that arc is given, so it carries a bearing without carrying a length. */
+export function startRun(geom, runM = BEARING_RUN_M) {
+  const s = endRun(geom, true, runM);
+  return s ? Float64Array.of(s[0], s[1], s[2], s[3])
+           : Float64Array.of(geom[0], geom[1], geom[0], geom[1]);
 }
 
 /* ------------------------------------------------------------------- rings */

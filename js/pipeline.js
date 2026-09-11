@@ -160,7 +160,10 @@ export async function compute(req, { progress = null, cache = null } = {}) {
   say('tour', 'ordering the drive');
   const walk = eulerianCircuit(exp.graph, mult, turns.entryNode(exp, start, mult));
   const circuit = turns.projectCircuit(exp, walk);
-  console.info(`tour makes ${turns.countPricedTurns(exp, walk)} turns it was charged for`);
+  const audit = turns.turnAudit(exp, walk);
+  console.info(`tour turns: ${audit.reversals} reversals onto the same tarmac, `
+    + `${audit.sharp} hairpins, ${audit.restricted} forbidden by a restriction, `
+    + `${audit.turnarounds} turnarounds at a dead end`);
   verifyCircuit(g, circuit, roadMult, start);
 
   say('waypoints', 'working out the navigation points');

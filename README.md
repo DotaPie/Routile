@@ -34,10 +34,36 @@ between them, so it doesn't ask for things you can't legally do: no turning roun
 in the middle of a street, and no turns OpenStreetMap marks as banned. Where a
 street has to be covered in both directions it goes round the block instead.
 
-That costs distance — about a seventh more, on the town-sized area I measured it
-against — and it is the difference between a route you can follow and one you
-have to improvise your way around. Turning at a dead end is still a turnaround,
-because there is nothing else to do there.
+Three manoeuvres look alike on a map and are not alike to drive, so they're
+priced apart. Leaving a street on the same tarmac you arrived on is the illegal
+one, and it's effectively banned. A hairpin onto a *different* road — a slip
+lane, the far carriageway of a dual road — is legal but awkward, so it's avoided
+where something better exists. Turning at a dead end is free, because there is
+nothing else to do there.
+
+Over the 39 km² I measure against, that leaves 1 same-tarmac reversal in a
+one-way route and 11 in a both-ways one, all of them at junctions where the road
+layout allows nothing else: raising the price to the equivalent of a 28-hour
+detour doesn't remove a single one. The cost of getting there is about 4% more
+driving, spent on extra passes over streets already covered.
+
+Angles are measured over 15 m of road at each side of a junction rather than off
+the first shape point, which at a finely mapped junction can be a five-metre stub
+pointing somewhere the road doesn't go.
+
+## Which roads count
+
+The public streets a car may use. Private roads are off by default — the
+driveways, yards and parking aisles behind a gate are somebody's property — and
+the toggle turns them on for an industrial estate or a gated development.
+
+Plain service roads (`highway=service` with no further tag: the access road
+through an estate, not a car-park aisle) are always downloaded, but only ever as
+*connectors*. The route may drive along one to get somewhere; it is never asked
+to cover one. Without them, a street whose only link to the network is a service
+road belongs to no reachable component at all and quietly disappears from the
+coverage — and no amount of extra download margin fixes that, because those
+streets are in the middle of the area, not at its edge.
 
 ## Opening a route again
 
