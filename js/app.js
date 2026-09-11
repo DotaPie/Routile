@@ -1171,11 +1171,13 @@ document.addEventListener('focusout', (ev) => {
   if (leaving(ev)) hideTip();
 });
 /* A touch screen has no hover, so the tap itself shows the note and the next
-   tap anywhere dismisses it. The click is left alone: these labels sit inside
-   their <label>, and clicking one should still put the cursor in the field. */
+   tap anywhere dismisses it. Defaulted away because the marker sits inside its
+   <label>, which would otherwise take the tap into the field. */
 document.addEventListener('click', (ev) => {
   const marker = markerAt(ev.target);
-  if (marker) showTip(marker); else hideTip();
+  if (!marker) { hideTip(); return; }
+  ev.preventDefault();
+  showTip(marker);
 });
 // The bubble is fixed, so anything that moves the page leaves it behind.
 window.addEventListener('scroll', hideTip, true);
@@ -1220,9 +1222,13 @@ for (const type of ['dragover', 'drop']) {
 /* ---------------------------------------------------------------- render */
 const DRIVING_TIP = 'Estimated from speed limits; the real drive takes longer.';
 
-// The same dotted-rule label index.html writes by hand, for the tiles built here.
-const infoLabel = (text, tip) =>
-  `<button type="button" class="info" data-tip="${escapeHtml(tip)}">${text}</button>`;
+// The same marker index.html writes by hand, for the tiles built here.
+const infoMarker = (tip) =>
+  '<button type="button" class="info" aria-label="What this estimate means"'
+  + ` data-tip="${escapeHtml(tip)}"><svg viewBox="0 0 24 24" aria-hidden="true">`
+  + '<path fill-rule="evenodd" d="M12 2.5a9.5 9.5 0 1 0 0 19 9.5 9.5 0 1 0 0-19z'
+  + 'M12 6.9a1.3 1.3 0 1 0 0 2.6 1.3 1.3 0 1 0 0-2.6z'
+  + 'M10.85 12.35a1.15 1.15 0 0 1 2.3 0v3.5a1.15 1.15 0 0 1-2.3 0z"/></svg></button>';
 
 function renderResult(res) {
   $('stats-card').classList.remove('hidden');
@@ -1240,7 +1246,7 @@ function renderResult(res) {
     ['Unreachable', `${cov.km_dropped_not_strongly_connected} km`],
     ['Fragments', Math.max(cov.strong_components - 1, 0)],
   ].map(([label, value, tip]) =>
-    `<div class="tile"><span class="tile-label">${tip ? infoLabel(label, tip) : label}</span>`
+    `<div class="tile"><span class="tile-label">${label}${tip ? infoMarker(tip) : ''}</span>`
     + `<span class="tile-value">${escapeHtml(String(value))}</span></div>`
   ).join('');
 

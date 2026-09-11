@@ -486,25 +486,24 @@ html, body {
 .switch-label { font-size: 13.5px; font-weight: 520; }
 
 /* ------------------------------------------------------------- info tips */
-/* The label itself carries the note, under a dotted yellow rule - the footnote
-   convention. This was a 13px ring-and-dot glyph, which at a 1.2px stroke was
-   a smudge; a rule is legible at any size and takes no width of its own.
-   Everything is inherited, so one rule serves a 12px field label and a 10.5px
-   uppercase tile label alike. */
+/* A filled disc with the i knocked out of it, after the label. Filled and not
+   outlined on purpose: the same glyph as a 1.2px-stroke ring was a smudge at
+   this size, while a hole in a solid shape keeps its shape however small.
+   Yellow rather than the accent, which means a thing is switched on. */
 .info {
-  font: inherit; letter-spacing: inherit; text-transform: inherit;
-  color: inherit;
-  padding: 0; background: transparent; border: 0;
-  text-decoration: underline dotted var(--warn);
-  text-decoration-thickness: 1.5px;
-  text-underline-offset: 3px;
+  display: inline-flex; vertical-align: -2.5px;
+  margin-left: 5px; padding: 0;
+  color: var(--warn);
+  background: transparent; border: 0; border-radius: 50%;
   cursor: help;
   transition: color 0.12s ease;
 }
+.info svg { width: 13px; height: 13px; fill: currentColor; stroke: none; }
 .info:hover { color: var(--warn-2); }
-.info:focus-visible {
-  outline: 2px solid var(--warn); outline-offset: 2px; border-radius: 3px;
-}
+.info:focus-visible { outline: 2px solid var(--warn); outline-offset: 1px; }
+/* The tile label is 10.5px, so its marker comes down to match. */
+.tile-label .info { vertical-align: -2px; }
+.tile-label .info svg { width: 12px; height: 12px; }
 
 /* One bubble for the lot, placed by showTip(). pointer-events off so it cannot
    sit under the pointer and flicker the marker's own hover off. */
