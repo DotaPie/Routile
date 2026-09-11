@@ -171,14 +171,16 @@
 
         <span class="tool-sep" aria-hidden="true"></span>
 
-        <!-- A pin leaving for somewhere else: this view, handed to Google Maps
-             at the same place and zoom. -->
+        <!-- A folded map with a pin standing on it: this view, handed to Google
+             Maps at the same place and zoom. The map's top right corner stops
+             short, so the pin reads as sitting in front of it. -->
         <button id="open-gmaps" class="tool" type="button"
                 aria-label="Open this view in Google Maps">
           <svg viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M9 20.5s5.5-5.4 5.5-9.6A5.5 5.5 0 0 0 3.5 10.9c0 4.2 5.5 9.6 5.5 9.6z"/>
-            <circle cx="9" cy="10.7" r="2.1"/>
-            <path d="M15.2 8.8 20.5 3.5m0 0h-3.8m3.8 0v3.8"/>
+            <path d="M9 6 3.5 9.5v10L9 16l5 3.5 5.5-3.5v-3"/>
+            <path d="M9 6v10M14 19.5V13"/>
+            <path d="M16.8 13.2c0 0 3.7-3.6 3.7-6.4a3.7 3.7 0 0 0-7.4 0c0 2.8 3.7 6.4 3.7 6.4z"/>
+            <circle cx="16.8" cy="6.7" r="1.3" fill="currentColor" stroke="none"/>
           </svg>
           <span>Google</span>
         </button>
