@@ -2,7 +2,7 @@
    generated routes, not derived. */
 
 // Bump on ANY algorithm change, or the result cache serves stale routes.
-export const ALGO_VERSION = '12';
+export const ALGO_VERSION = '13';
 
 // -------------------------------------------------------------------- basemap
 // Throw away key for this project - an actual human comment
@@ -125,6 +125,30 @@ export const REQUIRED_MIN_INSIDE_M = 30;
    the short ones; losing them turns junctions into dead ends. EMPIRICAL over
    39 km2: arcs 30 m and over were driven 99-100% of the time, under 30 m 55%. */
 export const REQUIRED_MIN_INSIDE_FRACTION = 0.5;
+
+/* A dead end shorter than this is not required: drive in, and the only way out
+   is back the way you came, for a few metres you can see from the junction. At
+   this length it is usually not a street at all but the stub left where a new
+   development is half mapped - the name is drawn from the main road and the
+   rest of the street is not there yet.
+
+   Still drivable, just never required. EMPIRICAL over 39 km2 (one way / both
+   ways), against 237 dead ends that could be required:
+
+       cut at        0 m    7 m   15 m   20 m   30 m
+       roads cut       0      1     17     28     37
+       turnarounds   273    273    255    243    231
+       total km    535.0  538.1  535.5  533.6  531.5
+       both ways   597.2      -      -  592.8      -
+
+   7 m cuts one road in a whole city district - not worth having. 20 m clears
+   the spikes that hang off a roundabout, drops 30 turnarounds and shortens the
+   drive; the 0.4 km it gives up is stubs nobody would drive into. Past 30 m
+   real cul-de-sacs start going. */
+export const DEAD_END_MIN_M = 20;
+
+// A typo guard on the field, not a capability limit.
+export const DEAD_END_MAX_M = 200;
 
 // Snap the queried bbox outward to this grid so nearby drags share a cache entry.
 export const BBOX_SNAP_DEG = 0.005;

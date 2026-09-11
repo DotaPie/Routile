@@ -69,15 +69,26 @@
         </div>
       </div>
 
+      <!-- Admits highway=service and anything tagged access=private. Named for
+           the service roads: they are the bulk of what it brings in. -->
       <label class="switch">
         <input type="checkbox" id="private-roads">
         <span class="track" aria-hidden="true"></span>
-        <span class="switch-label">Include private roads</span>
+        <span class="switch-label">Include service roads</span>
       </label>
 
       <label class="field">
         <span>Passes per street</span>
         <input type="number" id="passes" value="1" min="1" step="1" inputmode="numeric">
+      </label>
+
+      <label class="field">
+        <span>Shortest dead end (m)<button type="button" class="info"
+              aria-label="What this setting does"
+              data-tip="A dead end shorter than this is left out of the route: you would drive in, see all of it, and reverse straight back out. Set it to 0 to drive every last stub.">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11.2v5.4"/><circle cx="12" cy="7.6" r="1.15" fill="currentColor" stroke="none"/></svg>
+        </button></span>
+        <input type="number" id="dead-end" value="20" min="0" step="1" inputmode="numeric">
       </label>
 
       <label class="switch">
@@ -87,7 +98,11 @@
       </label>
 
       <label class="field hidden" id="session-field">
-        <span>Session length (hours)</span>
+        <span>Session length (hours)<button type="button" class="info"
+              aria-label="What this estimate means"
+              data-tip="Sessions are cut using the same speed-limit estimate as the driving time, so two hours here means two hours of driving at the limit. Allow more than that on the road.">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11.2v5.4"/><circle cx="12" cy="7.6" r="1.15" fill="currentColor" stroke="none"/></svg>
+        </button></span>
         <input type="text" id="session" value="2" inputmode="decimal"
                placeholder="2" autocomplete="off">
       </label>
@@ -99,7 +114,6 @@
       <div class="bar"><div class="fill"></div></div>
       <div class="progress-text"></div>
     </div>
-    <div id="error" class="error hidden"></div>
 
     <section id="stats-card" class="block hidden">
       <div class="tiles four" id="summary"></div>
@@ -153,6 +167,20 @@
                 aria-label="Clear the zones, the start and the route">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14M10 7V5.6A1.6 1.6 0 0 1 11.6 4h.8A1.6 1.6 0 0 1 14 5.6V7m-7.2 0 .8 11.2A2 2 0 0 0 9.6 20h4.8a2 2 0 0 0 2-1.8L17.2 7"/></svg>
           <span>Clear</span>
+        </button>
+
+        <span class="tool-sep" aria-hidden="true"></span>
+
+        <!-- A pin leaving for somewhere else: this view, handed to Google Maps
+             at the same place and zoom. -->
+        <button id="open-gmaps" class="tool" type="button"
+                aria-label="Open this view in Google Maps">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M9 20.5s5.5-5.4 5.5-9.6A5.5 5.5 0 0 0 3.5 10.9c0 4.2 5.5 9.6 5.5 9.6z"/>
+            <circle cx="9" cy="10.7" r="2.1"/>
+            <path d="M15.2 8.8 20.5 3.5m0 0h-3.8m3.8 0v3.8"/>
+          </svg>
+          <span>Google</span>
         </button>
       </div>
 
@@ -214,6 +242,9 @@
     </div>
   </main>
 </div>
+
+<!-- One bubble for every info marker on the page, placed by showTip(). -->
+<span id="tip" class="tip hidden" role="tooltip"></span>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>

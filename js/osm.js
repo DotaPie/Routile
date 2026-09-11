@@ -514,7 +514,28 @@ export function turnRestrictions(g, elements) {
 
    The fraction is measured in degrees and scaled by metric length; locally the
    degree-to-metre scale is constant, so this needs no projection. */
-export function markRequired(g, area, minInsideM, minFraction = config.REQUIRED_MIN_INSIDE_FRACTION) {
+// Nothing leaves the far end of this arc but the arc itself, driven back.
+function blindEnd(g, a) {
+  const v = g.head[a], back = g.reciprocal[a];
+  for (let p = g.outStart[v]; p < g.outStart[v + 1]; p++) {
+    if (g.outArcs[p] !== back) return false;
+  }
+  return true;
+}
+
+/* A few metres of tarmac with nothing at the end of it. Asked of the strip, not
+   of one direction: the way back out of a stub starts at a real junction, so on
+   its own it would still be required and still force the drive in. */
+function deadEndStub(g, a, minM) {
+  if (g.length[a] >= minM) return false;
+  const back = g.reciprocal[a];
+  return blindEnd(g, a) || (back >= 0 && blindEnd(g, back));
+}
+
+export function markRequired(g, area, minInsideM, {
+  minFraction = config.REQUIRED_MIN_INSIDE_FRACTION,
+  deadEndMinM = config.DEAD_END_MIN_M,
+} = {}) {
   const regions = area.regions;
   const boxes = regions.map((rings) => ringBounds(rings[0]));
   // The box round the lot, for the cheap reject that runs against every arc.
@@ -528,6 +549,7 @@ export function markRequired(g, area, minInsideM, minFraction = config.REQUIRED_
   for (let a = 0; a < g.E; a++) {
     // A connector is here to reach a street, not to be one.
     if (g.connector[a]) continue;
+    if (deadEndStub(g, a, deadEndMinM)) continue;
     const geom = g.geom[a];
     let gx0 = Infinity, gy0 = Infinity, gx1 = -Infinity, gy1 = -Infinity;
     for (let i = 0; i < geom.length; i += 2) {
@@ -606,6 +628,7 @@ const round = (v, d) => Math.round(v * 10 ** d) / 10 ** d;
 
 // Fetch, mark required arcs, prune to the largest strongly connected component.
 export async function prepare(area, { bufferM, snapDeg, minInsideM,
+                                      deadEndMinM = config.DEAD_END_MIN_M,
                                       includePrivate = false, progress = null, cache = null }) {
   const say = progress || (() => {});
 
@@ -628,7 +651,7 @@ export async function prepare(area, { bufferM, snapDeg, minInsideM,
   };
 
   say('mark', 'identifying roads inside the drawn area');
-  const requiredAll = markRequired(G, area, minInsideM);
+  const requiredAll = markRequired(G, area, minInsideM, { deadEndMinM });
   report.centerline_km_in_area = centerlineKm(G, arcsOf(requiredAll));
   report.weak_components = weakComponents(G, null, true).count;
 

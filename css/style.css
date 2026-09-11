@@ -21,6 +21,8 @@
   --on-accent: #06120e;
   --focus: rgba(53, 210, 154, 0.26);
   --good: #35d29a;
+  --warn: #f0c14b;
+  --warn-2: #ffd977;
   --bad: #ff7368;
   --bad-soft: #2c1917;
   --bad-line: #4d2724;
@@ -247,7 +249,7 @@ html, body {
   transition: background 0.12s ease, color 0.12s ease;
 }
 .tool:hover { background: var(--hover); color: var(--ink); }
-/* Hairlines, so six buttons read as four groups. */
+/* Hairlines, so seven buttons read as five groups. */
 .tool-sep {
   flex: 0 0 auto; align-self: stretch;
   width: 1px; margin: 3px 2px;
@@ -483,11 +485,39 @@ html, body {
 .switch input:focus-visible + .track { box-shadow: 0 0 0 3px var(--focus); }
 .switch-label { font-size: 13.5px; font-weight: 520; }
 
-/* -------------------------------------------------------------- notices */
-.error {
-  margin-top: 12px; padding: 10px 12px; border-radius: var(--r-sm);
-  font-size: 12.5px;
-  background: var(--bad-soft); border: 1px solid var(--bad-line); color: var(--bad);
+/* ------------------------------------------------------------- info tips */
+/* A quiet "there is a caveat here" marker beside a label. Yellow, not the
+   accent: the accent means a thing is switched on, and this is not a control. */
+.info {
+  display: inline-flex; vertical-align: -2px;
+  margin-left: 5px; padding: 0;
+  color: var(--warn);
+  background: transparent; border: 0; border-radius: 50%;
+  cursor: help;
+  transition: color 0.12s ease;
+}
+.info svg {
+  width: 13px; height: 13px;
+  fill: none; stroke: currentColor; stroke-width: 1.9;
+  stroke-linecap: round; stroke-linejoin: round;
+}
+.info:hover { color: var(--warn-2); }
+.info:focus-visible { outline: 2px solid var(--warn); outline-offset: 1px; }
+/* The tile label is 10.5px, so the marker comes down to match. */
+.tile-label .info { vertical-align: -1px; }
+.tile-label .info svg { width: 11.5px; height: 11.5px; }
+
+/* One bubble for the lot, placed by showTip(). pointer-events off so it cannot
+   sit under the pointer and flicker the marker's own hover off. */
+.tip {
+  position: fixed; z-index: 700;
+  max-width: 250px; padding: 9px 11px;
+  font-size: 12px; line-height: 1.45; font-weight: 420;
+  color: var(--ink);
+  background: var(--bg);
+  border: 1.5px solid var(--accent); border-radius: 9px;
+  box-shadow: var(--shadow-lg);
+  pointer-events: none;
 }
 
 /* ------------------------------------------------------------- progress */
@@ -583,6 +613,16 @@ html, body {
 }
 .legend-item.pinned .legend-name { font-weight: 680; color: var(--accent); }
 .legend-item:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+/* The whole route, above the list it totals. No swatch - it stands for every
+   colour under it - and a hairline drawn beside the button, so neither the
+   hover ring nor the row's height moves when it lights up. */
+.legend-all { position: relative; margin-bottom: 5px; }
+.legend-all::after {
+  content: '';
+  position: absolute; left: 8px; right: 8px; bottom: -3px;
+  height: 1px; background: var(--line-2);
+}
+.legend-all .legend-name { font-weight: 600; }
 .legend-item .swatch {
   flex: 0 0 auto;
   width: 11px; height: 11px; border-radius: 3px;

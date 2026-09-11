@@ -37,8 +37,8 @@ const state = {
   routeLayers: [],     // one polyline per session, index-aligned with the legend
   sessionPoints: [],   // the offset points behind each of those polylines
   detail: null,        // the canvas of arrows and waypoint dots
-  hovered: null,       // previewed by the pointer
-  pinned: null,        // clicked, and stays until dismissed
+  pinned: null,        // clicked in the legend; null is the whole route
+  shown: null,         // the highlight on the map, pin or pointer preview
   mode: 'rect',        // rect | circle | freehand | pan | pin
   lastShape: 'rect',   // which tool a shift+drag uses while panning
   jobId: 0,
@@ -178,13 +178,11 @@ function setBasemap(id, { save = true } = {}) {
     halo: cssVar('--map-bg'),
     dot: cssVar('--map-ink'),
   });
-  for (const item of $('legend').querySelectorAll('.legend-item')) {
-    item.querySelector('.swatch').style.background =
-      sessionColor(Number(item.dataset.session));
+  for (const item of $('legend').querySelectorAll('.swatch')) {
+    item.style.background = sessionColor(sessionOf(item.closest('.legend-item')));
   }
   // The restyle above cleared the per-session opacity the highlight sets.
-  applyHighlight(state.hovered !== null ? state.hovered : state.pinned,
-    { scroll: false });
+  applyHighlight(state.shown, { scroll: false });
 
   $('basemap-label').textContent = basemap.label;
   for (const li of $('basemap-list').children) {
@@ -436,13 +434,6 @@ function discardDraft() {
   drag = null;
 }
 
-// The shape came out too small to be one, so it counts as a click on the map:
-// let go of whatever the legend has pinned. Leaflet's own click cannot do this,
-// because a shape tool takes the gesture at the press and no click follows.
-function tapped() {
-  if (state.pinned !== null) pin(null);
-}
-
 function finishDrag(latlng) {
   if (!drag) return;
   const { tool, from, points, closing } = drag;
@@ -451,7 +442,7 @@ function finishDrag(latlng) {
 
   if (tool === 'rect') {
     const bounds = L.latLngBounds(from, latlng);
-    if (pixelGap(bounds.getNorthWest(), bounds.getSouthEast()) < MIN_DRAG_PX) return tapped();
+    if (pixelGap(bounds.getNorthWest(), bounds.getSouthEast()) < MIN_DRAG_PX) return;
     addShape({
       type: 'rect',
       west: bounds.getWest(), south: bounds.getSouth(),
@@ -459,7 +450,7 @@ function finishDrag(latlng) {
     });
   } else if (tool === 'circle') {
     // Half the rectangle's threshold: this is a radius, not a diagonal.
-    if (pixelGap(from, latlng) < MIN_DRAG_PX / 2) return tapped();
+    if (pixelGap(from, latlng) < MIN_DRAG_PX / 2) return;
     addShape({
       type: 'circle',
       lat: from.lat, lon: from.lng, radius_m: from.distanceTo(latlng),
@@ -469,7 +460,7 @@ function finishDrag(latlng) {
     // wherever the pointer drifted to inside it.
     const raw = closing ? points : points.concat([latlng]);
     const outline = simplifyOutline(raw);
-    if (outline.length < 3) return tapped();
+    if (outline.length < 3) return;
     addShape({ type: 'freehand', points: outline.map((p) => [p.lat, p.lng]) });
   }
 }
@@ -486,14 +477,12 @@ document.addEventListener('keydown', (ev) => {
   if (ev.key === 'Escape') finishDrag(null);
 });
 
+// A click on the map places the start pin and nothing else. What the legend has
+// picked is let go in the legend, by choosing All sessions.
 map.on('click', (ev) => {
-  if (state.mode === 'pin') {
-    setStart(ev.latlng);
-    setMode(state.lastShape);
-    return;
-  }
-  // Nothing on the map catches clicks, so this is a click on the map itself.
-  if (state.pinned !== null) pin(null);
+  if (state.mode !== 'pin') return;
+  setStart(ev.latlng);
+  setMode(state.lastShape);
 });
 
 /* --------------------------------------------------- temporary pan grip */
@@ -570,7 +559,7 @@ function clearZones() {
   drawRegions();
   clearRoute();
   clearStart();
-  showError(null);
+  hideMapAlert();
   syncZones();
 }
 
@@ -703,6 +692,15 @@ setMode('rect');
 
 $('clear-zones').onclick = () => clearZones();
 
+// Google's /@lat,lon,zoomz form, so the other map opens on what is on this one.
+$('open-gmaps').onclick = () => {
+  const { lat, lng } = map.getCenter();
+  window.open(
+    `https://www.google.com/maps/@${lat.toFixed(6)},${lng.toFixed(6)},${map.getZoom()}z`,
+    '_blank', 'noopener',
+  );
+};
+
 /* ----------------------------------------------------------- place search */
 // OpenStreetMap's own geocoder: free, no key, asked once per submit rather than
 // per keystroke, which is what its usage policy expects.
@@ -724,7 +722,7 @@ $('search').addEventListener('submit', async (ev) => {
     const hits = await res.json();
     if (!hits.length) {
       card.classList.add('missed');
-      showError(`No place found for "${query}".`);
+      showMapAlert(`No place found for "${query}".`);
       return;
     }
     const hit = hits[0];
@@ -737,10 +735,10 @@ $('search').addEventListener('submit', async (ev) => {
     } else {
       map.setView([+hit.lat, +hit.lon], 15);
     }
-    showError(null);
+    hideMapAlert();
     $('search-input').blur();
   } catch (err) {
-    showError(`Place search failed: ${err.message}`);
+    showMapAlert(`Place search failed: ${err.message}`);
   } finally {
     state.searching = false;
     card.classList.remove('searching');
@@ -753,6 +751,8 @@ $('search-input').addEventListener('input', () => {
 
 /* ---------------------------------------------------------------- config */
 $('passes').max = String(config.PASSES_MAX);
+$('dead-end').max = String(config.DEAD_END_MAX_M);
+$('dead-end').value = String(config.DEAD_END_MIN_M);
 $('private-roads').checked = config.INCLUDE_PRIVATE_DEFAULT;
 $(config.BOTH_DIRECTIONS_DEFAULT ? 'dir-both' : 'dir-oneway').checked = true;
 $('session').value = String(Math.round((config.SESSION_SECONDS_DEFAULT / 3600) * 100) / 100);
@@ -776,6 +776,14 @@ function passesValue() {
   return n >= 1 ? n : null;
 }
 
+// Whole metres. 0 is meaningful: drive every stub, however short.
+function deadEndValue() {
+  const raw = $('dead-end').value.trim();
+  if (!/^\d+$/.test(raw)) return null;
+  const n = parseInt(raw, 10);
+  return n <= config.DEAD_END_MAX_M ? n : null;
+}
+
 const NO_SPLIT_HOURS = 24;   // one session: a session is capped at 24 h
 
 function sessionHours() {
@@ -790,14 +798,31 @@ function sessionHours() {
 
 function markValid(el, ok) { el.classList.toggle('invalid', !ok); }
 
+// Marks the offending fields, and names the first problem for whoever asks.
 function validate() {
   const passes = passesValue();
+  const deadEnd = deadEndValue();
   const hours = sessionHours();
   markValid($('passes'), passes !== null);
+  markValid($('dead-end'), deadEnd !== null);
   markValid($('session'), !sessionEnabled() || hours !== null);
   if (passes === null) return 'Passes must be a whole number of 1 or more.';
+  if (deadEnd === null) {
+    return 'The shortest dead end must be a whole number of metres, '
+      + `from 0 to ${config.DEAD_END_MAX_M}.`;
+  }
   if (hours === null) return 'Session length must be a number of hours between 0.1 and 24.';
   return null;
+}
+
+// The drawn area, or why it cannot be used.
+function areaProblem() {
+  try {
+    Area.fromShape(shapePayload()).validate(config.AREA_CAP_KM2);
+    return null;
+  } catch (err) {
+    return err.message || 'That area cannot be used.';
+  }
 }
 
 /* --------------------------------------------------------------- request */
@@ -805,6 +830,7 @@ function payload() {
   const body = {
     shape: shapePayload(),
     include_private: includePrivate(),
+    dead_end_m: deadEndValue() ?? config.DEAD_END_MIN_M,
     both_directions: bothDirections(),
     passes: passesValue() || 1,
     session_minutes: (sessionHours() || NO_SPLIT_HOURS) * 60,
@@ -820,32 +846,25 @@ function scheduleCheck() {
   state.checkTimer = setTimeout(runCheck, 200);
 }
 
-// Settings and zones together, with the merged shape's exact geodesic area.
+/* Settings and zones together, with the merged shape's exact geodesic area.
+   Nothing is said out loud here - this runs on every keystroke, and a message
+   per keystroke is noise. The offending field goes red; Compute says why. */
 function runCheck() {
   if (!state.regions.length) return;
-
-  const problem = validate();
-  if (problem) {
-    showError(problem);
-    $('compute').disabled = true;
-    return;
-  }
-
-  let area;
+  validate();
+  let area = null;
   try {
     area = Area.fromShape(shapePayload());
-    area.validate(config.AREA_CAP_KM2);
-  } catch (err) {
-    showError(err.message || 'That area cannot be used.');
-    $('compute').disabled = true;
-    return;
-  }
-  showError(null);
-  $('compute').disabled = false;
-  $('area-info').textContent = areaText(area.areaKm2(), state.regions.length);
+  } catch (err) { /* named on Compute */ }
+  $('area-info').textContent = area
+    ? areaText(area.areaKm2(), state.regions.length)
+    : '--';
+  // Not while a job is running, or changing a setting mid-compute would arm the
+  // button for a second one.
+  $('compute').disabled = state.ticker !== null;
 }
 
-['passes', 'session', 'dir-oneway', 'dir-both', 'session-enabled',
+['passes', 'dead-end', 'session', 'dir-oneway', 'dir-both', 'session-enabled',
  'private-roads'].forEach((id) => {
   $(id).addEventListener('change', () => {
     if (id === 'session-enabled') syncSessionField();
@@ -877,23 +896,23 @@ worker.onmessage = (ev) => {
     if (msg.result.start) setStart(L.latLng(msg.result.start.lat, msg.result.start.lon));
   } else if (msg.type === 'error') {
     finishJob();
-    showError(friendlyError(msg.message));
+    showMapAlert(friendlyError(msg.message));
   }
 };
 
 worker.onerror = (ev) => {
   finishJob();
-  showError('The compute worker failed to start. Serve this folder over http(s): '
+  showMapAlert('The compute worker failed to start. Serve this folder over http(s): '
     + 'browsers refuse to run workers from a file:// page.');
   console.error(ev);
 };
 
 $('compute').onclick = () => {
   if (!state.regions.length) return;
-  const problem = validate();
-  if (problem) { showError(problem); return; }
+  const problem = validate() || areaProblem();
+  if (problem) { showMapAlert(problem); return; }
 
-  showError(null);
+  hideMapAlert();
   clearRoute();
   $('compute').disabled = true;
   state.jobId += 1;
@@ -936,13 +955,6 @@ function renderProgress() {
 
 function hideProgress() { $('progress').classList.add('hidden'); }
 
-function showError(msg) {
-  const box = $('error');
-  if (!msg) { box.classList.add('hidden'); return; }
-  box.classList.remove('hidden');
-  box.textContent = msg;
-}
-
 /* ------------------------------------------------------ save and reload */
 /* What goes in the zip's metadata.json. Three blocks, one per restore step:
    drawn geometry, form, computed route. Kept apart from the worker's request
@@ -970,6 +982,7 @@ function routeMetadata(res) {
     form: {
       bothDirections: bothDirections(),
       includePrivate: includePrivate(),
+      deadEndM: deadEndValue() ?? config.DEAD_END_MIN_M,
       passes: passesValue() || 1,
       splitSessions: sessionEnabled(),
       sessionHours: sessionHours() || NO_SPLIT_HOURS,
@@ -1018,6 +1031,12 @@ function restoreRoute(meta) {
   // validation would reject.
   $('passes').value = String(
     Math.min(Math.max(Math.round(form.passes) || 1, 1), config.PASSES_MAX));
+  // Absent in files written before the setting existed, so fall back to today's
+  // default rather than leaving whatever the form happened to be showing.
+  const deadEnd = Math.round(Number(form.deadEndM));
+  $('dead-end').value = String(Number.isFinite(deadEnd) && deadEnd >= 0
+    ? Math.min(deadEnd, config.DEAD_END_MAX_M)
+    : config.DEAD_END_MIN_M);
   $('session-enabled').checked = !!form.splitSessions;
   const hours = Number(form.sessionHours);
   if (Number.isFinite(hours) && hours >= 0.1 && hours <= NO_SPLIT_HOURS) {
@@ -1029,7 +1048,6 @@ function restoreRoute(meta) {
   state.result = result;
   renderResult(result);
   drawSessions(result, result.track || []);
-  showError(null);
   hideMapAlert();
 }
 
@@ -1087,8 +1105,74 @@ function hideMapAlert() { $('map-alert').classList.add('hidden'); }
 
 $('map-alert-close').addEventListener('click', hideMapAlert);
 document.addEventListener('keydown', (ev) => {
-  if (ev.key === 'Escape') hideMapAlert();
+  if (ev.key !== 'Escape') return;
+  hideMapAlert();
+  hideTip();
 });
+
+/* --------------------------------------------------------------- info tips */
+/* One bubble, moved to whichever marker is asking. Fixed and clamped to the
+   window, because the panel is 388px wide and a bubble anchored inside it would
+   otherwise run off the edge. Delegated, because the summary tiles - and the
+   marker in one of them - are rebuilt on every result. */
+const tipBubble = $('tip');
+let tipFor = null;
+
+function showTip(marker) {
+  if (tipFor === marker) return;      // moving within the marker, not onto it
+  tipFor = marker;
+  tipBubble.textContent = marker.dataset.tip || '';
+  tipBubble.classList.remove('hidden');
+  const at = marker.getBoundingClientRect();
+  const box = tipBubble.getBoundingClientRect();
+  const gap = 8, edge = 10;
+  const left = Math.min(Math.max(at.left + at.width / 2 - box.width / 2, edge),
+                        window.innerWidth - box.width - edge);
+  // Below unless that would go off the bottom, in which case above.
+  const below = at.bottom + gap;
+  const top = below + box.height + edge > window.innerHeight
+    ? Math.max(at.top - box.height - gap, edge)
+    : below;
+  tipBubble.style.left = `${Math.round(left)}px`;
+  tipBubble.style.top = `${Math.round(top)}px`;
+}
+
+function hideTip() {
+  tipFor = null;
+  tipBubble.classList.add('hidden');
+}
+
+const markerAt = (target) =>
+  (target instanceof Element ? target.closest('.info') : null);
+
+// Left the marker, rather than crossed from its padding onto its own glyph.
+const leaving = (ev) => {
+  const marker = markerAt(ev.target);
+  return marker && !marker.contains(ev.relatedTarget);
+};
+
+document.addEventListener('mouseover', (ev) => {
+  const marker = markerAt(ev.target);
+  if (marker) showTip(marker);
+});
+document.addEventListener('mouseout', (ev) => {
+  if (leaving(ev)) hideTip();
+});
+// Keyboard, and a tap on a touch screen: the marker takes focus either way.
+document.addEventListener('focusin', (ev) => {
+  const marker = markerAt(ev.target);
+  if (marker) showTip(marker);
+});
+document.addEventListener('focusout', (ev) => {
+  if (leaving(ev)) hideTip();
+});
+// A marker inside a <label> would otherwise hand the click to the input.
+document.addEventListener('click', (ev) => {
+  if (markerAt(ev.target)) ev.preventDefault();
+});
+// The bubble is fixed, so anything that moves the page leaves it behind.
+window.addEventListener('scroll', hideTip, true);
+window.addEventListener('resize', hideTip);
 
 dropzone.addEventListener('click', () => $('load-file').click());
 dropzone.addEventListener('keydown', (ev) => {
@@ -1127,6 +1211,19 @@ for (const type of ['dragover', 'drop']) {
 }
 
 /* ---------------------------------------------------------------- render */
+const DRIVING_TIP =
+  "Worked out from the speed limits in OpenStreetMap, counting no time for "
+  + 'turning round, junctions or stops. The real drive takes longer, by how '
+  + 'much depends on the area.';
+
+// The same marker index.html writes by hand, for the tiles built here.
+const infoMarker = (tip) =>
+  `<button type="button" class="info" aria-label="What this estimate means"`
+  + ` data-tip="${escapeHtml(tip)}">`
+  + '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/>'
+  + '<path d="M12 11.2v5.4"/>'
+  + '<circle cx="12" cy="7.6" r="1.15" fill="currentColor" stroke="none"/></svg></button>';
+
 function renderResult(res) {
   $('stats-card').classList.remove('hidden');
 
@@ -1135,15 +1232,15 @@ function renderResult(res) {
   const sessions = res.sessions;
   $('summary').innerHTML = [
     ['Distance', `${st.total_km} km`],
-    ['Driving', st.duration],
+    ['Driving', st.duration, DRIVING_TIP],
     ['Sessions', sessions.length],
     ['Roads covered', `${cov.centerline_km_covered} km`],
     ['Coverage', `${cov.coverage_pct}%`],
     ['Roads in area', `${cov.centerline_km_in_area} km`],
     ['Unreachable', `${cov.km_dropped_not_strongly_connected} km`],
     ['Fragments', Math.max(cov.strong_components - 1, 0)],
-  ].map(([label, value]) =>
-    `<div class="tile"><span class="tile-label">${label}</span>`
+  ].map(([label, value, tip]) =>
+    `<div class="tile"><span class="tile-label">${label}${tip ? infoMarker(tip) : ''}</span>`
     + `<span class="tile-value">${escapeHtml(String(value))}</span></div>`
   ).join('');
 
@@ -1174,7 +1271,7 @@ $('download').onclick = async () => {
     const kind = res.sessions.length > 1 ? 'sessions' : 'route';
     saveBlob(blob, `routile-${kind}-${stamp}.zip`);
   } catch (err) {
-    showError(`Could not build the file: ${err.message}`);
+    showMapAlert(`Could not build the file: ${err.message}`);
   } finally {
     button.disabled = false;
     button.textContent = label;
@@ -1300,28 +1397,44 @@ function arrowsAlong(points) {
   return out;
 }
 
+// null is the whole route, which is what the All sessions row stands for.
+function sessionOf(item) {
+  return item.dataset.session === 'all' ? null : Number(item.dataset.session);
+}
+
+function legendRow(key, color, name, km, minutes) {
+  return `<button type="button" class="legend-item${color ? '' : ' legend-all'}"`
+    + ` data-session="${key}" role="listitem">`
+    + (color ? `<span class="swatch" style="background:${color}"></span>` : '')
+    + '<span class="legend-text">'
+    + `<span class="legend-name">${name}</span>`
+    + `<span class="legend-meta">${Number(km).toFixed(1)} km · ${humanMinutes(minutes)}</span>`
+    + '</span></button>';
+}
+
 function buildLegend(sessions) {
   const box = $('legend');
-  box.innerHTML = sessions.map((session, i) => {
-    const km = Number(session.km).toFixed(1);
-    return `<button type="button" class="legend-item" data-session="${i}" role="listitem">`
-      + `<span class="swatch" style="background:${sessionColor(i)}"></span>`
-      + '<span class="legend-text">'
-      + `<span class="legend-name">Session ${i + 1}</span>`
-      + `<span class="legend-meta">${km} km · ${humanMinutes(session.minutes)}</span>`
-      + '</span></button>';
-  }).join('');
+  const rows = sessions.map((session, i) =>
+    legendRow(i, sessionColor(i), `Session ${i + 1}`, session.km, session.minutes));
+  // Totalled from the rows it sits above, so the sums agree with the list. One
+  // session is already its own whole route, so the row would only repeat it.
+  if (sessions.length > 1) {
+    const sum = (field) => sessions.reduce((s, x) => s + (Number(x[field]) || 0), 0);
+    rows.unshift(legendRow('all', null, 'All sessions', sum('km'), sum('minutes')));
+  }
+  box.innerHTML = rows.join('');
   box.classList.toggle('hidden', sessions.length === 0);
   layoutOverlays();
 
   for (const item of box.querySelectorAll('.legend-item')) {
-    const i = Number(item.dataset.session);
-    item.addEventListener('mouseenter', () => hover(i, { scroll: false }));
-    item.addEventListener('mouseleave', () => hover(null));
-    item.addEventListener('focus', () => hover(i, { scroll: false }));
-    item.addEventListener('blur', () => hover(null));
-    item.addEventListener('click', () => pin(state.pinned === i ? null : i));
+    const i = sessionOf(item);
+    item.addEventListener('mouseenter', () => preview(i));
+    item.addEventListener('mouseleave', () => endPreview());
+    item.addEventListener('focus', () => preview(i));
+    item.addEventListener('blur', () => endPreview());
+    item.addEventListener('click', () => pin(i));
   }
+  pin(state.pinned);      // a fresh route starts on All sessions
 }
 
 /* The top bar floats centred over the map with the session list beside it, and
@@ -1396,25 +1509,26 @@ function barIsCrowded() {
   return bar.right + clear > legend.getBoundingClientRect().left;
 }
 
-// Two layers of one highlight, both driven from the legend. Hover previews a
-// session; a click pins it so it survives the pointer leaving the legend.
-// Clicking again, or clicking the map, lets go; a hover falls back to the pin.
-function hover(index, { scroll = true } = {}) {
-  state.hovered = index;
-  applyHighlight(index !== null ? index : state.pinned, { scroll });
-}
+/* Two layers of one highlight, both driven from the legend. The pointer or the
+   keyboard previews a row; a click pins it, so it survives the pointer leaving.
+   Only All sessions puts the whole route back. */
+const preview = (index) => applyHighlight(index, { scroll: false });
+
+// The pointer left the legend, so whatever is pinned shows again.
+const endPreview = () => applyHighlight(state.pinned);
 
 function pin(index) {
   state.pinned = index;
   applyHighlight(index);
   for (const item of $('legend').querySelectorAll('.legend-item')) {
-    item.classList.toggle('pinned', Number(item.dataset.session) === index);
+    item.classList.toggle('pinned', sessionOf(item) === index);
   }
 }
 
 // Highlighting leaves a session exactly as drawn and takes the others off the
 // map, so what is left is that one leg on its own.
 function applyHighlight(index, { scroll = true } = {}) {
+  state.shown = index;
   state.routeLayers.forEach((line, i) => {
     if (!line) return;
     const hidden = index !== null && i !== index;
@@ -1425,7 +1539,7 @@ function applyHighlight(index, { scroll = true } = {}) {
   state.detail.setHighlight(index);
 
   for (const item of $('legend').querySelectorAll('.legend-item')) {
-    const hot = Number(item.dataset.session) === index;
+    const hot = sessionOf(item) === index;
     item.classList.toggle('active', hot);
     // Keep the row visible when the legend has scrolled past it.
     if (hot && scroll) item.scrollIntoView({ block: 'nearest' });
@@ -1446,7 +1560,7 @@ function clearRouteLayers() {
   state.sessionPoints = [];
   state.detail.clear();
   state.pinned = null;
-  state.hovered = null;
+  state.shown = null;
 }
 
 function clearRoute() {

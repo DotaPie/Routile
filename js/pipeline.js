@@ -57,10 +57,15 @@ export function parseRequest(payload) {
   if (!(sessionMinutes >= 1 && sessionMinutes <= config.MAX_SESSION_MINUTES)) {
     throw new RequestError(`session length must be between 1 and ${config.MAX_SESSION_MINUTES} minutes`);
   }
+  const deadEndM = positiveFloat(payload.dead_end_m ?? config.DEAD_END_MIN_M, 'shortest dead end');
+  if (!(deadEndM >= 0 && deadEndM <= config.DEAD_END_MAX_M)) {
+    throw new RequestError(`shortest dead end must be between 0 and ${config.DEAD_END_MAX_M} metres`);
+  }
   const start = payload.start || null;
   return {
     area,
     includePrivate: Boolean(payload.include_private ?? config.INCLUDE_PRIVATE_DEFAULT),
+    deadEndM,
     startLon: start && start.lon != null ? Number(start.lon) : null,
     startLat: start && start.lat != null ? Number(start.lat) : null,
     bothDirections: Boolean(payload.both_directions ?? config.BOTH_DIRECTIONS_DEFAULT),
@@ -83,7 +88,7 @@ export function requestKey(req) {
     req.area.bounds.bufferM(fetchBufferM(req)).snapOut(config.BBOX_SNAP_DEG).key(),
     req.area.key(),
     round6(req.startLon ?? 0), round6(req.startLat ?? 0),
-    req.includePrivate,
+    req.includePrivate, req.deadEndM,
     req.bothDirections, req.passes, req.sessionSeconds,
     req.margin, req.maxLegMetres, req.maxLegArcs,
   ]);
@@ -113,6 +118,7 @@ export async function compute(req, { progress = null, cache = null } = {}) {
     bufferM: fetchBufferM(req),
     snapDeg: config.BBOX_SNAP_DEG,
     minInsideM: config.REQUIRED_MIN_INSIDE_M,
+    deadEndMinM: req.deadEndM,
     includePrivate: req.includePrivate,
     progress: say,
     cache,
