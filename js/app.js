@@ -72,8 +72,10 @@ const cssVar = (name) =>
 const AREA_STYLE = () => ({
   color: cssVar('--zone'), weight: 2, fillOpacity: 0.08, interactive: false,
 });
-const DRAFT_STYLE = () => ({
-  color: cssVar('--zone'), weight: 2, fillOpacity: 0.1, dashArray: '5,4',
+// Green joins, red crops: a draft says which before it is let go of.
+const opColor = (op) => cssVar(op === 'subtract' ? '--cut' : '--zone');
+const DRAFT_STYLE = (op) => ({
+  color: opColor(op), weight: 2, fillOpacity: 0.1, dashArray: '5,4',
   interactive: false,
 });
 
@@ -304,7 +306,11 @@ setBasemap(storedMap || config.BASEMAP_DEFAULT, { save: false });
    The pointer is captured for the held kind, so a drag leaving the map keeps
    reporting. While a shape tool is armed Leaflet's dragging is off (setMode),
    so one finger draws rather than pans; two still pinch. */
-let drag = null;   // { tool, pointerId, from, points, layer, ring, closing, sticky }
+let drag = null;   // { tool, op, pointerId, from, points, layer, ring, closing, sticky }
+
+// Add joins the shape to the area, Subtract crops it back out. Read at the
+// press and kept in `drag`, so switching mid-gesture cannot change the answer.
+const drawOp = () => ($('op-subtract').checked ? 'subtract' : 'add');
 
 const MIN_DRAG_PX = 12;        // below this, a drag is an accidental click
 const FREEHAND_STEP_PX = 5;    // sampling distance while drawing by hand
@@ -350,19 +356,20 @@ mapEl.addEventListener('pointerdown', (ev) => {
   try { mapEl.setPointerCapture(ev.pointerId); } catch (err) { /* pointer gone */ }
 
   const at = pointerLatLng(ev);
-  drag = { tool, pointerId: ev.pointerId, from: at, points: [at],
+  const op = drawOp();
+  drag = { tool, op, pointerId: ev.pointerId, from: at, points: [at],
            layer: null, ring: null, closing: false, sticky: false };
 
   if (tool === 'rect') {
-    drag.layer = L.rectangle(L.latLngBounds(at, at), DRAFT_STYLE());
+    drag.layer = L.rectangle(L.latLngBounds(at, at), DRAFT_STYLE(op));
   } else if (tool === 'circle') {
-    drag.layer = L.circle(at, { radius: 1, ...DRAFT_STYLE() });
+    drag.layer = L.circle(at, { radius: 1, ...DRAFT_STYLE(op) });
   } else {
-    drag.layer = L.polyline([at], DRAFT_STYLE());
+    drag.layer = L.polyline([at], DRAFT_STYLE(op));
     // A ring showing where to finish. Without it the shape closes with a
     // straight line from wherever you stopped - a spike across the map.
     drag.ring = L.circleMarker(at, {
-      radius: SNAP_PX, color: cssVar('--zone'), weight: 1.5,
+      radius: SNAP_PX, color: opColor(op), weight: 1.5,
       dashArray: '4,3', fillOpacity: 0.06, interactive: false,
     }).addTo(map);
   }
@@ -371,6 +378,7 @@ mapEl.addEventListener('pointerdown', (ev) => {
 
 mapEl.addEventListener('pointermove', (ev) => {
   if (!drag || ev.pointerId !== drag.pointerId) return;
+  if (tempPan) return;            // frozen under the pan grip; see below
   const at = pointerLatLng(ev);
   if (drag.tool === 'rect') {
     drag.layer.setBounds(L.latLngBounds(drag.from, at));
@@ -438,32 +446,32 @@ function discardDraft() {
 
 function finishDrag(latlng) {
   if (!drag) return;
-  const { tool, from, points, closing } = drag;
+  const { tool, op, from, points, closing } = drag;
   discardDraft();
   if (!latlng) return;      // cancelled: Escape, or the gesture was taken away
 
   if (tool === 'rect') {
     const bounds = L.latLngBounds(from, latlng);
     if (pixelGap(bounds.getNorthWest(), bounds.getSouthEast()) < MIN_DRAG_PX) return;
-    addShape({
+    applyShape({
       type: 'rect',
       west: bounds.getWest(), south: bounds.getSouth(),
       east: bounds.getEast(), north: bounds.getNorth(),
-    });
+    }, op);
   } else if (tool === 'circle') {
     // Half the rectangle's threshold: this is a radius, not a diagonal.
     if (pixelGap(from, latlng) < MIN_DRAG_PX / 2) return;
-    addShape({
+    applyShape({
       type: 'circle',
       lat: from.lat, lon: from.lng, radius_m: from.distanceTo(latlng),
-    });
+    }, op);
   } else {
     // Released inside the ring: close on the start point exactly, not on
     // wherever the pointer drifted to inside it.
     const raw = closing ? points : points.concat([latlng]);
     const outline = simplifyOutline(raw);
     if (outline.length < 3) return;
-    addShape({ type: 'freehand', points: outline.map((p) => [p.lat, p.lng]) });
+    applyShape({ type: 'freehand', points: outline.map((p) => [p.lat, p.lng]) }, op);
   }
 }
 
@@ -491,7 +499,14 @@ map.on('click', (ev) => {
 /* Middle or right button pans whatever tool is armed and hands it back on
    release, with the Pan button lit while it lasts. Done by hand because
    Leaflet's drag handler answers to the left button only, which the draw tools
-   need. */
+   need.
+
+   A half-drawn zone is frozen for the pan rather than thrown away, so a long
+   outline can be walked across the map a screenful at a time. It costs nothing
+   to hold: the draft is a list of latitudes and longitudes, so it rides along
+   under the map on its own. Pointer moves are dropped while the grip is held,
+   and a pan drag keeps the same ground under the cursor, so the pen picks up
+   exactly where it was put down. */
 const PAN_BUTTONS = new Set([1, 2]);
 let tempPan = null;
 
@@ -499,7 +514,6 @@ mapEl.addEventListener('mousedown', (ev) => {
   if (tempPan || !PAN_BUTTONS.has(ev.button)) return;
   if (ev.target.closest('.leaflet-control')) return;
   ev.preventDefault();
-  if (drag) finishDrag(null);     // a half-drawn zone is abandoned, not kept
   tempPan = { mode: state.mode, x: ev.clientX, y: ev.clientY };
   setMode('pan');
   mapEl.classList.add('grabbing');
@@ -532,24 +546,34 @@ mapEl.addEventListener('contextmenu', (ev) => {
    drawn across a gap joins both. Zones touching nothing stay separate regions
    of the same area, computed as one job.
 
+   Subtract crops instead: the shape is cut out of what is there, which may open
+   a hole, split one region into two, or clear the map entirely.
+
    `state.regions` is a GeoJSON-style MultiPolygon in [lon, lat]: one entry per
    region, each an outline followed by any holes. */
-function addShape(shape) {
+function applyShape(shape, op) {
   const poly = [shapeRing(shape)];
-  let merged;
+  let next;
   try {
-    // Unioning a lone polygon with itself is not a no-op: it also resolves a
-    // freehand outline that crossed itself.
-    merged = state.regions.length
-      ? polygonClipping.union(state.regions, poly)
-      : polygonClipping.union(poly);
+    if (op === 'subtract') {
+      next = state.regions.length
+        ? polygonClipping.difference(state.regions, poly) : [];
+    } else {
+      // Unioning a lone polygon with itself is not a no-op: it also resolves a
+      // freehand outline that crossed itself.
+      next = state.regions.length
+        ? polygonClipping.union(state.regions, poly)
+        : polygonClipping.union(poly);
+    }
   } catch (err) {
     // Boolean ops can fail on a pathological outline. An unmerged zone beats
-    // losing the drag, and everything downstream copes with overlap.
-    console.warn('could not merge that zone, keeping it separate', err);
-    merged = state.regions.concat([poly]);
+    // losing the drag, and everything downstream copes with overlap - but a cut
+    // has no such fallback, so it leaves the area exactly as it was.
+    console.warn('could not apply that zone', err);
+    if (op === 'subtract') return;
+    next = state.regions.concat([poly]);
   }
-  state.regions = merged;
+  state.regions = next;
   drawRegions();
   clearRoute();
   syncZones();
@@ -663,6 +687,12 @@ function clearStart() {
 // Clear has work to do as long as there is a zone or a pin on the map.
 function syncClear() {
   $('clear-zones').disabled = !state.regions.length && !state.startLatLng;
+  // There is nothing to cut into on an empty map, and a red draft that quietly
+  // did nothing would read as a bug. Cutting the last zone away hands the
+  // selector back to Add on its own, so it is never left armed over nothing.
+  const empty = !state.regions.length;
+  $('op-subtract').disabled = empty;
+  if (empty) $('op-add').checked = true;
 }
 
 const TOOL_BUTTONS = {

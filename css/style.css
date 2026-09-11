@@ -26,6 +26,7 @@
   --bad: #ff7368;
   --bad-soft: #2c1917;
   --bad-line: #4d2724;
+  --on-bad: #2a0d09;
   --glass: rgba(23, 28, 33, 0.93);
   --r: 10px;
   --r-sm: 7px;
@@ -42,12 +43,14 @@
   --map-bg: #0b0f12;
   --map-ink: #e8eef2;
   --zone: #35d29a;
+  --cut: #ff7368;
   --pin-ring: #0b1a15;
 }
 :root[data-map="light"] {
   --map-bg: #f4f6f8;
   --map-ink: #10151c;
   --zone: #0b8f68;
+  --cut: #d8352a;
   --pin-ring: #ffffff;
 }
 
@@ -462,6 +465,33 @@ html, body {
 }
 .segmented label:hover input:checked + span { color: var(--on-accent); }
 .segmented input:focus-visible + span { box-shadow: 0 0 0 3px var(--focus); }
+.segmented input:disabled + span { opacity: 0.35; }
+.segmented label:has(input:disabled) { cursor: default; }
+.segmented label:hover input:disabled + span { color: var(--ink-2); }
+
+/* The one segmented control that lives in the tool bar rather than the panel:
+   same shape, sized and lettered like the buttons beside it, and columns that
+   fit their words instead of splitting the row in half. Subtract wears the red
+   its drafts are drawn in. */
+.bar-seg {
+  align-self: center; margin-left: 3px;
+  grid-template-columns: auto auto; gap: 2px; padding: 2px;
+  background: var(--field-bg);
+}
+.bar-seg span {
+  display: flex; align-items: center; gap: 6px;
+  padding: 5px 9px;
+  font-size: 13px; font-weight: 520;
+  border-radius: 6px;
+}
+.bar-seg b { font-weight: inherit; }
+.bar-seg svg {
+  width: 15px; height: 15px; flex: 0 0 auto;
+  fill: none; stroke: currentColor; stroke-width: 2;
+  stroke-linecap: round; stroke-linejoin: round;
+}
+#op-subtract:checked + span { background: var(--bad); color: var(--on-bad); }
+.bar-seg label:hover #op-subtract:checked + span { color: var(--on-bad); }
 
 /* --------------------------------------------------------------- switch */
 .switch {
@@ -647,6 +677,9 @@ html, body {
 #stage.tools-tight .tool span { display: none; }
 #stage.tools-tight .tool { padding: 8px 10px; }
 #stage.tools-tight .tool-sep { margin: 3px 0; }
+/* The plus and the minus carry it once the words go. */
+#stage.tools-tight .bar-seg b { display: none; }
+#stage.tools-tight .bar-seg span { padding: 6px 8px; }
 
 /* Then the bar gives up the centre: the sessions are in the right corner, so
    the room left is all on the left. */

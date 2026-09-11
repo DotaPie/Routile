@@ -154,6 +154,20 @@
           <span>Freehand</span>
         </button>
 
+        <!-- What the shape above does to the area: join it, or crop it out
+             again. Subtract is off until there is something to cut into. -->
+        <div class="segmented bar-seg" role="radiogroup"
+             aria-label="What a drawn shape does to the area">
+          <label>
+            <input type="radio" name="draw-op" id="op-add" value="add" checked>
+            <span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5.5v13M5.5 12h13"/></svg><b>Add</b></span>
+          </label>
+          <label>
+            <input type="radio" name="draw-op" id="op-subtract" value="subtract" disabled>
+            <span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5.5 12h13"/></svg><b>Subtract</b></span>
+          </label>
+        </div>
+
         <span class="tool-sep" aria-hidden="true"></span>
 
         <button id="mode-pin" class="tool" aria-label="Set where the route starts">

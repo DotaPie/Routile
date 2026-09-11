@@ -13,7 +13,7 @@ Draw an area, get a driving route that covers every street in it. A static web p
 ## How to use
 
 1. **Find your spot.** Search for a place, or pan and zoom the map.
-2. **Draw the area.** Rectangle, Circle or Freehand. Draw as many zones as you like: overlapping ones merge, separate ones are covered by the same route.
+2. **Draw the area.** Rectangle, Circle or Freehand. Draw as many zones as you like: overlapping ones merge, separate ones are covered by the same route. Switch the tools from **Add** to **Subtract** to crop a shape back out again. Hold the middle or right mouse button to pan mid-shape — the drawing freezes and picks up where you left it.
 3. **Drop a start pin — optional.** Where the drive begins and ends. Without one it starts from the centre of your area.
 4. **Choose how to drive it.** One way covers every street once; Both ways drives each one in both directions. Passes per street repeats the whole route. Split into sessions cuts the drive into outings of a given length.
 5. **Compute route**, then **Download**.

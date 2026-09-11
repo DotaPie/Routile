@@ -2,7 +2,7 @@
    generated routes, not derived. */
 
 // Bump on ANY algorithm change, or the result cache serves stale routes.
-export const ALGO_VERSION = '14';
+export const ALGO_VERSION = '15';
 
 // -------------------------------------------------------------------- basemap
 // Throw away key for this project - an actual human comment
@@ -258,13 +258,24 @@ export const UTURN_PENALTY_S = 18000;
        one-way      10       3        1        0
        both         17       6        1        0
 
-   240 s would clear the rest but four minutes of detour to avoid a legal turn
-   looks sensible here and absurd elsewhere. What matters more than the value is
-   that it is separate from UTURN_PENALTY_S: with one price for both, it had to
-   be low enough not to distort hairpins, which made it too low to stop
+   The table counts turns past UTURN_DEGREES. It misses the ones the taper
+   prices and nothing reports: at a tight fork the swing onto the far arm
+   measures around 138 degrees, is charged a third of this, and at 90 s that
+   came to 27 s - too cheap to avoid, and a turn you cannot take in one
+   movement. Priced over the whole tapered range instead, measured with the
+   fork at the D2 ramps (48.10530/17.09388) as the test:
+
+       penalty              90 s    240 s    600 s
+       takes the fork        yes       no       no
+       one-way km          531.6    532.2    535.3
+       both-ways km        592.6    594.4    595.1
+
+   240 buys it for 0.3%; 600 only costs more. What matters more than the value
+   is that it is separate from UTURN_PENALTY_S: with one price for both, it had
+   to be low enough not to distort hairpins, which made it too low to stop
    reversals - and at some junctions it preferred the reversal to the legal
    hairpin that would have replaced it. */
-export const SHARP_TURN_PENALTY_S = 90;
+export const SHARP_TURN_PENALTY_S = 240;
 
 // A turn an OSM restriction forbids. Above the reversal price: both are
 // illegal, but this one is on a sign.
