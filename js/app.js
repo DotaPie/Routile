@@ -178,8 +178,10 @@ function setBasemap(id, { save = true } = {}) {
     halo: cssVar('--map-bg'),
     dot: cssVar('--map-ink'),
   });
-  for (const item of $('legend').querySelectorAll('.swatch')) {
-    item.style.background = sessionColor(sessionOf(item.closest('.legend-item')));
+  // Not the All sessions row: its stripe is there to hold the column, not to
+  // carry a colour.
+  for (const stripe of $('legend').querySelectorAll('.legend-item:not(.legend-all) .stripe')) {
+    stripe.style.background = sessionColor(sessionOf(stripe.closest('.legend-item')));
   }
   // The restyle above cleared the per-session opacity the highlight sets.
   applyHighlight(state.shown, { scroll: false });
@@ -1409,9 +1411,11 @@ function sessionOf(item) {
 }
 
 function legendRow(key, color, name, km, minutes) {
+  // The stripe is on every row, colourless on All sessions, so each label in
+  // the list starts at the same place.
   return `<button type="button" class="legend-item${color ? '' : ' legend-all'}"`
     + ` data-session="${key}" role="listitem">`
-    + (color ? `<span class="swatch" style="background:${color}"></span>` : '')
+    + `<span class="stripe"${color ? ` style="background:${color}"` : ''}></span>`
     + '<span class="legend-text">'
     + `<span class="legend-name">${name}</span>`
     + `<span class="legend-meta">${Number(km).toFixed(1)} km · ${humanMinutes(minutes)}</span>`

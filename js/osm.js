@@ -578,6 +578,43 @@ export function markRequired(g, area, minInsideM, {
   return required;
 }
 
+/* A direction you could only begin by turning round: nothing reaches its tail
+   but the same strip of tarmac driven back, and that tail is a junction rather
+   than a dead end. Requiring it buys a second pass of a street the route has
+   just driven, and the only way to start that pass is the illegal U-turn.
+
+   Asked of the pruned graph - before the prune, a road that turns out to be
+   unreachable still looks like a way in. Only ever clears one side of a pair,
+   so the street stays required, and stays driven, the other way round. */
+function dropForcedUturnStarts(g, required) {
+  const drop = new Uint8Array(g.E);
+  const dropped = [];
+  for (const a of g.arcsByOrder) {
+    const back = g.reciprocal[a];
+    if (!required[a] || back < 0 || !required[back] || drop[back]) continue;
+
+    const v = g.tail[a];
+    let reached = false;
+    for (let p = g.inStart[v]; p < g.inStart[v + 1] && !reached; p++) {
+      if (g.inArcs[p] !== back) reached = true;
+    }
+    if (reached) continue;
+
+    // A dead end turns round for free and legally. This is about the junctions
+    // where the same manoeuvre would be the illegal kind.
+    let exits = 0;
+    for (let p = g.outStart[v]; p < g.outStart[v + 1]; p++) {
+      if (g.outArcs[p] !== a) exits++;
+    }
+    if (!exits) continue;
+
+    drop[a] = 1;
+    dropped.push(a);
+  }
+  for (const a of dropped) required[a] = 0;
+  return dropped;
+}
+
 // Physical road length. A two-way street is two arcs over one strip of tarmac,
 // so each counts half.
 export function centerlineKm(g, arcs) {
@@ -671,11 +708,19 @@ export async function prepare(area, { bufferM, snapDeg, minInsideM,
     if (!requiredAll[a]) continue;
     if (arcMap[a] >= 0) required[arcMap[a]] = 1; else dropped.push(a);
   }
+  // Second passes whose only legal start is a U-turn. The tarmac is still
+  // driven the other way, so it still counts towards coverage.
+  const uturnOnly = dropForcedUturnStarts(H, required);
+  if (uturnOnly.length) {
+    console.info(`${uturnOnly.length} second passes dropped: nothing reaches the `
+      + 'far junction but the street itself, so starting them meant a U-turn');
+  }
+
   const requiredArcs = arcsOf(required);
   report.required_arcs = requiredArcs.length;
   report.dropped_arcs = dropped.length;
   report.km_dropped_not_strongly_connected = centerlineKm(G, dropped);
-  report.centerline_km_covered = centerlineKm(H, requiredArcs);
+  report.centerline_km_covered = centerlineKm(H, requiredArcs.concat(uturnOnly));
 
   if (!requiredArcs.length) {
     throw new NoRoadsError('no drivable roads inside the drawn area - try a larger area');

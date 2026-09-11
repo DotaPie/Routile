@@ -77,9 +77,9 @@
       <!-- The marker after a label means there is a note behind it; hovering it
            opens the one bubble, placed by showTip(). -->
       <label class="field">
-        <span>Shortest dead end (m)<button type="button" class="info"
+        <span>Shortest dead-end leg (m)<button type="button" class="info"
               aria-label="What this setting does"
-              data-tip="Dead ends shorter than this are left out of the route."><svg
+              data-tip="Measured from the dead end back to the last junction; anything shorter is left out of the route."><svg
               viewBox="0 0 24 24" aria-hidden="true"><path fill-rule="evenodd" d="M12 2.5a9.5 9.5 0 1 0 0 19 9.5 9.5 0 1 0 0-19zM12 6.9a1.3 1.3 0 1 0 0 2.6 1.3 1.3 0 1 0 0-2.6zM10.85 12.35a1.15 1.15 0 0 1 2.3 0v3.5a1.15 1.15 0 0 1-2.3 0z"/></svg></button></span>
         <input type="number" id="dead-end" value="20" min="0" step="1" inputmode="numeric">
       </label>

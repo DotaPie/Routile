@@ -2,7 +2,7 @@
    generated routes, not derived. */
 
 // Bump on ANY algorithm change, or the result cache serves stale routes.
-export const ALGO_VERSION = '13';
+export const ALGO_VERSION = '14';
 
 // -------------------------------------------------------------------- basemap
 // Throw away key for this project - an actual human comment
@@ -131,6 +131,10 @@ export const REQUIRED_MIN_INSIDE_FRACTION = 0.5;
    this length it is usually not a street at all but the stub left where a new
    development is half mapped - the name is drawn from the main road and the
    rest of the street is not there yet.
+
+   Measured over the whole arc, which after simplify() runs from the dead end
+   back to the last real junction - not over the pointed tip the route draws.
+   Coverage is junction to junction; there is no way to require half an arc.
 
    Still drivable, just never required. EMPIRICAL over 39 km2 (one way / both
    ways), against 237 dead ends that could be required:
