@@ -38,7 +38,7 @@
      that a route exists and merely makes the bad ones last resorts. */
 
 import {
-  MCF_TIME_SCALE, RESTRICTED_TURN_PENALTY_S, SHARP_TURN_PENALTY_S,
+  CONNECTOR_PENALTY_S, MCF_TIME_SCALE, RESTRICTED_TURN_PENALTY_S, SHARP_TURN_PENALTY_S,
   UTURN_DEGREES, UTURN_PENALTY_S, UTURN_TAPER_DEGREES,
 } from './config.js';
 import { startRun, turnAngle } from './geo.js';
@@ -119,7 +119,11 @@ export function expandTurns(g, { restricted = null } = {}) {
       length: g.length[a], travel: g.travel[a], geom: g.geom[a],
       osmids: g.osmKey[a] ? g.osmKey[a].split(',') : [],
       names: g.names[a], refs: g.refs[a], highway: g.highway[a],
-      connector: g.connector[a], cost: g.cost[a],
+      connector: g.connector[a],
+      // The connector surcharge lives here rather than on the road graph, so it
+      // steers the solver without ever showing up in the distance and duration
+      // quoted back to the driver - the same reason turn prices live here.
+      cost: g.cost[a] + (g.connector[a] ? CONNECTOR_PENALTY_S * MCF_TIME_SCALE : 0),
     };
   }
 

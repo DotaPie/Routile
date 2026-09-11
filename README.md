@@ -41,11 +41,12 @@ lane, the far carriageway of a dual road — is legal but awkward, so it's avoid
 where something better exists. Turning at a dead end is free, because there is
 nothing else to do there.
 
-Over the 39 km² I measure against, that leaves 1 same-tarmac reversal in a
-one-way route and 11 in a both-ways one, all of them at junctions where the road
-layout allows nothing else: raising the price to the equivalent of a 28-hour
-detour doesn't remove a single one. The cost of getting there is about 4% more
-driving, spent on extra passes over streets already covered.
+Over the 39 km² I measure against, that leaves 5 same-tarmac reversals in a
+one-way route and 16 in a both-ways one, against 25 and 42 before — and every
+one that remains is at a junction where the road layout allows nothing else.
+Raising the price to the equivalent of a 28-hour detour doesn't remove a single
+one. The cost of getting there is about 5% more driving, spent on extra passes
+over streets already covered.
 
 Angles are measured over 15 m of road at each side of a junction rather than off
 the first shape point, which at a finely mapped junction can be a five-metre stub
@@ -64,6 +65,14 @@ to cover one. Without them, a street whose only link to the network is a service
 road belongs to no reachable component at all and quietly disappears from the
 coverage — and no amount of extra download margin fixes that, because those
 streets are in the middle of the area, not at its edge.
+
+A connector is also priced as a last resort rather than a shortcut, which is not
+a detail. The service crossings through the central reservation of a dual
+carriageway are mapped as ordinary service roads and look to a solver like a free
+U-turn across a fast road; on the ground they are signed no-entry. Nothing in the
+data separates one of those from a legitimate access road, so the rule is that a
+connector is only worth driving when there is no alternative — which is exactly
+the case it exists for.
 
 ## Opening a route again
 

@@ -5,7 +5,7 @@
 
 // Bump on ANY algorithm change, or the result cache will serve stale routes
 // and you will chase phantom bugs.
-export const ALGO_VERSION = '11';
+export const ALGO_VERSION = '12';
 
 // -------------------------------------------------------------------- basemap
 // Throw away key for this project - an actual human comment
@@ -111,11 +111,35 @@ export const INCLUDE_PRIVATE_DEFAULT = false;
    coverage; with them, it is reachable. The cost is a slightly larger download
    and a slightly larger graph, and no extra driving is ever required.
 
-   The one thing it can get wrong: a service road that is gated or private but
-   not tagged as either. A deadhead leg down one of those is a leg the driver
-   cannot take. Turn this off if that shows up. Bump QUERY_VERSION in osm.js if
-   you do, or the cached download will not match. */
+   The one thing it can get wrong: a service road that is gated, one-way or
+   signed no-entry in real life and tagged as none of those in OSM. A deadhead
+   leg down one of those is a leg the driver cannot take. Turn this off if that
+   shows up. Bump QUERY_VERSION in osm.js if you do, or the cached download will
+   not match. */
 export const INCLUDE_CONNECTORS = true;
+
+/* What driving a connector costs the solver, on top of the time it takes.
+
+   Without this a connector is just a cheap little road, and the solver uses it
+   wherever it saves a few seconds. That is exactly wrong. The service crossings
+   through the central reservation of a dual carriageway are the clearest case:
+   OSM has them as plain service roads, they look like a free U-turn across an
+   80 km/h road, and on the ground they are signed no-entry - they are there for
+   maintenance and buses. The route was taking one on Panonska cesta.
+
+   Nothing in the data distinguishes that crossing from a legitimate access road,
+   so the fix is not a better filter, it is to stop treating connectors as
+   shortcuts at all. Priced at ten minutes apiece the solver will only drive one
+   where there is no alternative within ten minutes - which is precisely the
+   case a connector exists for: a street that cannot be reached any other way.
+   Required arcs still force their own coverage, so making this expensive can
+   never lose a street; it only stops connectors being used for convenience.
+
+   Measured on that crossing, which saves about a minute against driving on to
+   the next junction: at 0 s and 60 s the route takes it, at 150 s and above it
+   does not. 600 s is well clear of the changeover and still nowhere near
+   UTURN_PENALTY_S, which is the other thing this has to stay clear of. */
+export const CONNECTOR_PENALTY_S = 600;
 
 // ---------------------------------------------------------------- OSM fetching
 // Fetch beyond the drawn shape so deadhead legs may leave it (what a human
@@ -296,13 +320,23 @@ export const UTURN_TAPER_DEGREES = 120;
    with the reversal. No price removes those, and a price high enough to try
    would only make the rest of the route worse.
 
-   1800 s sits well inside the flat region rather than at its edge, because a
-   denser or sparser network than this one will need a different detour to buy
-   its way out, and there is nothing to lose by having headroom: the flow only
-   pays this where it has no alternative at all. The 13 km it costs against
-   90 s is extra passes over streets already driven, which is the trade the
-   whole change is for. */
-export const UTURN_PENALTY_S = 1800;
+   So why 18000 and not 300? Because this price has to be a ban rather than a
+   preference, and a preference is what it becomes as soon as anything else on
+   the graph is expensive too. CONNECTOR_PENALTY_S below is 600, and a detour
+   over three connectors therefore costs 1800 - at which point the solver starts
+   treating "reverse illegally" and "go the long way" as a genuine trade and
+   takes the reversal. Measured, one-way mode, reversals left:
+
+       U-turn price      connector price 300 s   600 s   1200 s
+       1800 s                                1       5        9
+       18000 s                               1       1        1
+
+   At 18000 the two prices cannot interact: it would take thirty connectors in a
+   row to rival one reversal. The answer stops depending on the other constants,
+   which is the property worth having - not the number itself. Costs are integer
+   deciseconds in an Int32Array, so there is room for another two orders of
+   magnitude before this matters. */
+export const UTURN_PENALTY_S = 18000;
 
 /* The same for a hairpin onto different tarmac - a slip lane, a tight loop, the
    far carriageway of a dual road. Legal, so this is a preference rather than a

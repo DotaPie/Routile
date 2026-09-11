@@ -76,15 +76,25 @@ export function roadFilter({ includePrivate = false } = {}) {
    at all, which is the access road through an estate rather than a car-park
    aisle or somebody's drive. In the area measured that is 20 ways against 38
    parking aisles and 30 driveways, so it is a fifth of the service network
-   rather than all of it. */
+   rather than all of it.
+
+   The access rules here are deliberately stricter than roadFilter's. That one
+   follows OSMnx, which only looks at `access`; on a service road the same
+   meaning is just as often written on `vehicle` or as `customers`, `delivery`
+   or `permit`, and a road nobody may drive through is worse than useless as a
+   connector. Being over-cautious here costs a little coverage; being
+   under-cautious sends the driver somewhere they will be turned round. */
+const CONNECTOR_KEYS = ['access', 'vehicle', 'motor_vehicle', 'motorcar'];
+const CONNECTOR_DENY = 'private|no|customers|delivery|permit|permissive|agricultural|forestry';
+
 export function connectorFilter() {
   return '["highway"="service"]["service"!~"."]["area"!~"yes"]'
-    + '["access"!~"private"]["motor_vehicle"!~"no"]["motorcar"!~"no"]';
+    + CONNECTOR_KEYS.map((k) => `["${k}"!~"${CONNECTOR_DENY}"]`).join('');
 }
 
 /* Bump whenever overpassQuery() asks for something new, or a cache written by
    the old query will be served to the new code, missing whatever was added. */
-const QUERY_VERSION = 3;
+const QUERY_VERSION = 4;
 
 /* Two queries asking for different roads must not share one cached download. */
 export const profileKey = ({ includePrivate = false } = {}) =>
@@ -262,7 +272,10 @@ function fromElements(elements, connectors) {
       maxspeed: tags.maxspeed ?? null,
       // Exactly what connectorFilter() asks for and roadFilter() does not: a
       // plain service road, here to be driven through rather than covered.
-      connector: connectors && tags.highway === 'service' && !tags.service,
+      // Re-checked rather than assumed, because the same download also carries
+      // the ways the *road* filter matched.
+      connector: connectors && tags.highway === 'service' && !tags.service
+        && !CONNECTOR_KEYS.some((k) => tags[k] && new RegExp(`^(${CONNECTOR_DENY})$`).test(tags[k])),
     };
     for (let i = 1; i < ids.length; i++) raw.addEdge({ u: ids[i - 1], v: ids[i], ...attrs, geom: null });
     if (!oneway) {
