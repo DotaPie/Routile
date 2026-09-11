@@ -1143,14 +1143,16 @@ function showMapAlert(msg, { accept = null } = {}) {
   state.confirm = accept;
   $('map-alert-close').textContent = accept ? 'Accept' : 'Dismiss';
   $('map-alert-cancel').classList.toggle('hidden', !accept);
+  $('map-scrim').classList.remove('hidden');
   $('map-alert').classList.remove('hidden');
   $(accept ? 'map-alert-cancel' : 'map-alert-close').focus();
 }
 
-// Dismissing, cancelling and Escape are the same answer: no.
+// Dismissing, cancelling, clicking the dark and Escape are the same answer: no.
 function hideMapAlert() {
   state.confirm = null;
   $('map-alert').classList.add('hidden');
+  $('map-scrim').classList.add('hidden');
 }
 
 $('map-alert-close').addEventListener('click', () => {
@@ -1159,6 +1161,7 @@ $('map-alert-close').addEventListener('click', () => {
   if (accept) accept();
 });
 $('map-alert-cancel').addEventListener('click', hideMapAlert);
+$('map-scrim').addEventListener('click', hideMapAlert);
 document.addEventListener('keydown', (ev) => {
   if (ev.key !== 'Escape') return;
   hideMapAlert();

@@ -274,6 +274,14 @@ html, body {
 .tool:disabled:hover { background: transparent; color: var(--ink-2); }
 
 /* ------------------------------------------------------------ map alert */
+/* Over the stage only, so the panel stays readable while the map, the tool bar
+   and the session list go dark behind the box. Under the alert, over the rest. */
+.map-scrim {
+  position: absolute; inset: 0;
+  z-index: 590;
+  background: rgba(0, 0, 0, 0.5);
+}
+
 /* Centred on the map and stays until dismissed: loading a file is deliberate,
    so the answer belongs where you are looking. Above the top bar's z-index. */
 .map-alert {
@@ -484,7 +492,7 @@ html, body {
    fit their words instead of splitting the row in half. Subtract wears the red
    its drafts are drawn in. */
 .bar-seg {
-  align-self: center; margin-left: 3px;
+  align-self: center; margin-right: 3px;
   grid-template-columns: auto auto; gap: 2px; padding: 2px;
   background: var(--field-bg);
 }

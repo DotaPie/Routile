@@ -141,6 +141,21 @@
 
         <span class="tool-sep" aria-hidden="true"></span>
 
+        <!-- Ahead of the shapes, in reading order: what the shape about to be
+             drawn does to the area. Subtract is off until there is something to
+             cut into. -->
+        <div class="segmented bar-seg" role="radiogroup"
+             aria-label="What a drawn shape does to the area">
+          <label>
+            <input type="radio" name="draw-op" id="op-add" value="add" checked>
+            <span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5.5v13M5.5 12h13"/></svg><b>Add</b></span>
+          </label>
+          <label>
+            <input type="radio" name="draw-op" id="op-subtract" value="subtract" disabled>
+            <span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5.5 12h13"/></svg><b>Subtract</b></span>
+          </label>
+        </div>
+
         <button id="mode-rect" class="tool active" aria-label="Draw a rectangle">
           <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="6" width="16" height="12" rx="1.5" stroke-dasharray="3 2.5"/></svg>
           <span>Rectangle</span>
@@ -153,20 +168,6 @@
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4.4c4.3 0 7.8 2.4 7.8 5.4s-3.5 5.4-7.8 5.4-7.8-2.4-7.8-5.4S7.7 4.4 12 4.4z"/><path d="M9.2 15c-.7 1.6-.5 3.4.9 4.6"/></svg>
           <span>Freehand</span>
         </button>
-
-        <!-- What the shape above does to the area: join it, or crop it out
-             again. Subtract is off until there is something to cut into. -->
-        <div class="segmented bar-seg" role="radiogroup"
-             aria-label="What a drawn shape does to the area">
-          <label>
-            <input type="radio" name="draw-op" id="op-add" value="add" checked>
-            <span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5.5v13M5.5 12h13"/></svg><b>Add</b></span>
-          </label>
-          <label>
-            <input type="radio" name="draw-op" id="op-subtract" value="subtract" disabled>
-            <span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5.5 12h13"/></svg><b>Subtract</b></span>
-          </label>
-        </div>
 
         <span class="tool-sep" aria-hidden="true"></span>
 
@@ -244,6 +245,10 @@
     </div>
 
     <div id="legend" class="legend hidden" role="list" aria-label="Sessions"></div>
+
+    <!-- The map and its bar go dark behind the alert, so the one thing wanting
+         an answer is the one thing that looks live. Clicking it is a No. -->
+    <div id="map-scrim" class="map-scrim hidden"></div>
 
     <!-- Loading a file is a deliberate act with a deliberate answer, so when it
          fails it says so over the map rather than in a line down the panel. The
