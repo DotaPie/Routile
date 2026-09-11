@@ -1,26 +1,22 @@
 /* Fetch the drivable network from Overpass, build the road graph, mark which
    arcs must be driven, and account for everything dropped along the way.
 
-   The graph construction follows what OSMnx does for a `drive` network, step
-   for step, because the routing behaviour downstream was tuned against it:
+   Graph construction follows OSMnx's `drive` network step for step, because the
+   routing downstream was tuned against it:
 
    1. Download every drivable way touching the box plus a 500 m margin.
    2. One directed edge per node pair per way; two-way roads get both.
    3. Trim to the margin box, keeping an outside node only if it has a
       neighbour inside, so boundary streets stay in one piece.
-   4. Merge interstitial nodes - a junction of exactly two roads with matching
-      directions is just a bend - so an arc is a whole street between two
-      real junctions, with its geometry kept.
-   5. Trim to the box proper. Simplifying *before* this trim is what keeps a
-      junction just outside the box a junction, rather than a bend.
-   6. Impute a speed for every arc from its maxspeed tag, else the mean of its
-      road type, else the mean over all types.
+   4. Merge interstitial nodes, so an arc is a whole street between two real
+      junctions, geometry kept.
+   5. Trim to the box proper. Simplifying before this trim is what keeps a
+      junction just outside the box a junction rather than a bend.
+   6. Impute a speed from maxspeed, else the road type's mean, else the overall.
 
-   The accounting is a feature, not diagnostics. A one-way street clipped by
-   the fetch boundary can belong to no strongly connected component at all, so
-   it is *deleted* rather than balanced. Without reporting that delta a user
-   drives the route, finds missing streets and concludes the tool is broken. So
-   we measure it and say so. */
+   The accounting is a feature: a one-way street clipped by the fetch boundary
+   can belong to no strongly connected component and is deleted rather than
+   balanced, and a user who is not told that concludes the tool is broken. */
 
 import * as config from './config.js';
 import { geomLengthDeg, geomLengthM, haversineM, insideLengthDeg, pointInPolygon, ringBounds } from './geo.js';
@@ -29,22 +25,15 @@ import { Graph, stronglyConnectedComponents, weakComponents } from './graph.js';
 export class FetchError extends Error {}
 export class NoRoadsError extends Error {}
 
-/* Which ways to ask OpenStreetMap for: OSMnx's "drive" filter, the public
-   streets a car may use.
+/* OSMnx's "drive" filter: the public streets a car may use. `includePrivate`
+   relaxes it to admit access=private and highway=service, which is what an
+   industrial estate or a gated development needs.
 
-   `includePrivate` relaxes the access rules. Left off, the query skips ways
-   tagged access=private and every highway=service, which is where the
-   driveways, alleys, parking aisles and yards live. Turned on, all of those
-   come back, which is what you want for an industrial estate or a gated
-   development and not what you want for a sweep of the public streets.
-
-   Note what is *not* here any more: OSMnx also drops any way carrying
-   service=driveway and friends, whatever kind of highway it is. That reads a
-   subtag as though it were the tag. A street tagged highway=residential plus
-   service=parking_aisle - a residential street with parking bays along it, and
-   there are several in any housing estate - is a public street, and dropping it
-   left holes in the coverage that looked exactly like bugs. Every genuinely
-   private service road is already excluded by the highway clause. */
+   Deliberately missing: OSMnx also drops any way carrying service=driveway and
+   friends whatever its highway tag is, which reads a subtag as though it were
+   the tag. highway=residential + service=parking_aisle is a public street with
+   parking bays, and dropping it left holes that looked like bugs. Genuinely
+   private service roads are already excluded by the highway clause. */
 const HIGHWAY_NOT_DRIVEN =
   'abandoned|bridleway|bus_guideway|busway|construction|corridor|cycleway|elevator|'
   + 'escalator|footway|path|pedestrian|planned|platform|proposed|raceway|razed|steps|track';
@@ -57,33 +46,18 @@ export function roadFilter({ includePrivate = false } = {}) {
   return parts.join('');
 }
 
-/* Roads downloaded so the route can *reach* things, never so it covers them.
+/* Roads downloaded so the route can reach things, never so it covers them.
 
-   Some streets are joined to the rest of the network only through a service
-   road. They are ordinary public streets - the ones measured were plain
-   highway=unclassified, a kilometre of them - but with the service roads
-   filtered out they sit in a component with no way in and no way out, the
-   reachability prune deletes them, and they read as missing coverage. No amount
-   of extra buffer fixes that, because it is not a boundary effect: they were
-   1.2 km inside the drawn shape.
+   Some public streets are joined to the network only through a service road;
+   filter those out and they sit in a component with no way in or out, the prune
+   deletes them, and they read as missing coverage. Not a boundary effect - the
+   ones measured were 1.2 km inside the shape - so no buffer fixes it.
 
-   So: fetch the service roads, and mark them as connectors. A connector is
-   drivable in every way an ordinary arc is, so it can carry a deadhead leg and
-   stitch an orphaned street back onto the network, but markRequired() never
-   asks for it, so turning this on adds nothing to what has to be driven.
-
-   Only *plain* service roads, though - highway=service with no service=* subtag
-   at all, which is the access road through an estate rather than a car-park
-   aisle or somebody's drive. In the area measured that is 20 ways against 38
-   parking aisles and 30 driveways, so it is a fifth of the service network
-   rather than all of it.
-
-   The access rules here are deliberately stricter than roadFilter's. That one
-   follows OSMnx, which only looks at `access`; on a service road the same
-   meaning is just as often written on `vehicle` or as `customers`, `delivery`
-   or `permit`, and a road nobody may drive through is worse than useless as a
-   connector. Being over-cautious here costs a little coverage; being
-   under-cautious sends the driver somewhere they will be turned round. */
+   Only plain service roads: highway=service with no service=* subtag, the access
+   road through an estate rather than a car-park aisle. About a fifth of the
+   service network. Access rules are stricter than roadFilter's, which follows
+   OSMnx in looking only at `access`; on a service road the same meaning is as
+   often on `vehicle`, or written as customers/delivery/permit. */
 const CONNECTOR_KEYS = ['access', 'vehicle', 'motor_vehicle', 'motorcar'];
 const CONNECTOR_DENY = 'private|no|customers|delivery|permit|permissive|agricultural|forestry';
 
@@ -92,11 +66,11 @@ export function connectorFilter() {
     + CONNECTOR_KEYS.map((k) => `["${k}"!~"${CONNECTOR_DENY}"]`).join('');
 }
 
-/* Bump whenever overpassQuery() asks for something new, or a cache written by
-   the old query will be served to the new code, missing whatever was added. */
+// Bump whenever overpassQuery() asks for something new, or a cache written by
+// the old query gets served to the new code.
 const QUERY_VERSION = 4;
 
-/* Two queries asking for different roads must not share one cached download. */
+// Two queries asking for different roads must not share one cached download.
 export const profileKey = ({ includePrivate = false } = {}) =>
   `${includePrivate ? 'drive+private' : 'drive'}/v${QUERY_VERSION}`;
 
@@ -106,14 +80,10 @@ const REVERSED_VALUES = new Set(['-1', 'reverse', 'T']);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /* ----------------------------------------------------------------- fetching */
-/* The roads, the connectors, and the turn restrictions over them.
-
-   Three statements in one query, so they cost one round trip rather than three.
-   The ways are unioned and printed, then `>;` pulls in the nodes they reference
-   - which has to come *after* the union rather than inside it, or it would only
-   recurse down from whichever way statement ran last. The restrictions come
-   back as relations, which fromElements() ignores; turnRestrictions() reads
-   them. */
+/* Roads, connectors and turn restrictions in one round trip. `>;` pulls in the
+   nodes and must come *after* the union, not inside it, or it recurses down
+   from whichever way statement ran last. Restrictions come back as relations,
+   which fromElements() ignores and turnRestrictions() reads. */
 export function overpassQuery(box, profile) {
   const bbox = `${box.bottom},${box.left},${box.top},${box.right}`;
   const ways = [`way${roadFilter(profile)}(${bbox});`];
@@ -123,8 +93,7 @@ export function overpassQuery(box, profile) {
     + `relation["type"="restriction"](${bbox});out body;`;
 }
 
-/* Private mode already downloads every service road and requires it to be
-   driven, so there is nothing left for a connector to reach. */
+// Private mode already downloads and requires every service road.
 const useConnectors = ({ includePrivate = false } = {}) =>
   config.INCLUDE_CONNECTORS && !includePrivate;
 
@@ -145,11 +114,8 @@ async function postQuery(endpoint, query) {
   }
 }
 
-/* The raw Overpass elements for a box, cached, retried across endpoints.
-
-   A failure here is by far the most likely way for the whole pipeline to
-   fail - Overpass is a free shared service that regularly refuses connections -
-   so it gets a message a user can act on. */
+// Raw Overpass elements for a box, cached, retried across endpoints. The most
+// likely way the pipeline fails, so the error message is one a user can act on.
 export async function fetchOverpass(box, { profile, cache = null, progress = null } = {}) {
   const key = `${box.key()}|${profileKey(profile)}`;
   const hit = cache ? await cache.get('overpass', key) : null;
@@ -163,8 +129,7 @@ export async function fetchOverpass(box, { profile, cache = null, progress = nul
       const json = await postQuery(endpoint, query);
       if (json.remark && /error/i.test(json.remark)) throw new Error(json.remark);
       const elements = json.elements || [];
-      // A genuinely empty area, not a transport problem. Retrying the same
-      // query would just waste the user's time.
+      // An empty area, not a transport problem - retrying would waste time.
       if (!elements.length) throw new NoRoadsError('no roads found in this area');
       if (cache) await cache.put('overpass', key, elements);
       return elements;
@@ -186,8 +151,8 @@ export async function fetchOverpass(box, { profile, cache = null, progress = nul
 }
 
 /* ---------------------------------------------------------- the raw graph */
-/* Nodes keyed by OSM id, edges as records; only ever a few hundred thousand,
-   so plain Maps and arrays are fine here. */
+// Nodes keyed by OSM id. Only ever a few hundred thousand, so plain Maps are
+// fine before the flat-array Graph is built.
 class RawGraph {
   constructor() {
     this.nodes = new Map();   // id -> {x, y}
@@ -270,10 +235,8 @@ function fromElements(elements, connectors) {
       refs: tags.ref ? [String(tags.ref)] : [],
       highway: tags.highway ?? null,
       maxspeed: tags.maxspeed ?? null,
-      // Exactly what connectorFilter() asks for and roadFilter() does not: a
-      // plain service road, here to be driven through rather than covered.
-      // Re-checked rather than assumed, because the same download also carries
-      // the ways the *road* filter matched.
+      // What connectorFilter() matched and roadFilter() did not. Re-checked
+      // rather than assumed: one download carries the results of both.
       connector: connectors && tags.highway === 'service' && !tags.service
         && !CONNECTOR_KEYS.some((k) => tags[k] && new RegExp(`^(${CONNECTOR_DENY})$`).test(tags[k])),
     };
@@ -285,8 +248,8 @@ function fromElements(elements, connectors) {
   return raw;
 }
 
-/* Drop nodes outside the box - unless a neighbour is inside, so a street
-   crossing the boundary keeps its far end and stays one arc. */
+// Drop nodes outside the box, unless a neighbour is inside, so a street
+// crossing the boundary keeps its far end and stays one arc.
 function truncateToBox(raw, box) {
   const outside = new Set();
   for (const [id, n] of raw.nodes) if (!box.contains(n.x, n.y)) outside.add(id);
@@ -301,9 +264,8 @@ function truncateToBox(raw, box) {
 }
 
 /* --------------------------------------------------------- simplification */
-/* A node is a real junction (an endpoint of arcs) unless it merely joins two
-   road segments end to end: exactly two neighbours, with either one lane
-   through (degree 2) or two-way both sides (degree 4). */
+// A node is a real junction unless it merely joins two segments end to end:
+// two neighbours, with one lane through (degree 2) or two-way both sides (4).
 function isEndpoint(raw, v) {
   const outE = raw.outEdges(v), inE = raw.inEdges(v);
   const neigh = raw.neighbours(v);
@@ -369,8 +331,7 @@ function simplify(raw) {
       names: unionSorted(segs.map((s) => s.names)),
       refs: unionSorted(segs.map((s) => s.refs)),
       highway: segs[0].highway,
-      // A merged run is only a connector if all of it is; where a service road
-      // runs on into a public street the whole arc is a street to be driven.
+      // A merged run is only a connector if all of it is.
       connector: segs.every((s) => s.connector),
       // Differing limits along a merged street cannot be trusted either way;
       // let the road type decide, as OSMnx does.
@@ -381,8 +342,8 @@ function simplify(raw) {
   }
   raw.removeNodes(doomed);
 
-  // A closed loop with no junction on it - an isolated ring - was never a
-  // path and never simplified. Nothing can reach it; drop it.
+  // An isolated ring has no junction on it, so it was never a path and never
+  // simplified. Nothing can reach it.
   const rings = ringNodes(raw, endpoints);
   raw.removeNodes(rings);
 }
@@ -469,22 +430,16 @@ export function buildGraph(elements, fetchBox, downloadBox, profile = {}) {
 }
 
 /* -------------------------------------------------------- turn restrictions */
-/* Which (arrival arc, departure arc) pairs OSM forbids, as a Map from the
-   arriving arc to the set of departures it may not be followed by.
+/* (arrival arc -> set of departures it may not be followed by).
 
-   OSM states a restriction as three references: a `from` way, a `via`, and a
-   `to` way. Only the node-via form is read here. The way-via form describes a
-   movement across a short connecting way - the far side of a dual carriageway,
-   mostly - and pinning that onto simplified arcs correctly is a job of its own;
-   left undone, those movements simply stay unpriced.
+   OSM states a restriction as `from` way, `via`, `to` way. Only the node-via
+   form is read; the way-via form describes a movement across a short connecting
+   way and pinning it onto simplified arcs is a job of its own, so those stay
+   unpriced. `no_*` forbids the stated pair, `only_*` forbids everything else
+   out of the junction.
 
-   A `no_*` restriction forbids exactly the stated pair. An `only_*` forbids
-   everything else out of the junction, which is the stronger statement and the
-   one that is easy to get backwards.
-
-   Arcs are matched by way id rather than by geometry: simplification merges a
-   chain of ways into one arc but keeps every way id it swallowed, so the arc
-   carrying `from` up to the junction is the one whose id list contains it. */
+   Arcs match by way id, not geometry: simplification merges a chain of ways but
+   keeps every id it swallowed. */
 export function turnRestrictions(g, elements) {
   const nodeOfId = new Map();
   for (let v = 0; v < g.N; v++) nodeOfId.set(g.id[v], v);
@@ -530,10 +485,9 @@ export function turnRestrictions(g, elements) {
       const b = g.outArcs[q];
       if (waysOfArc[b].has(to)) departures.add(b);
     }
-    // Either end may be missing: a restriction can name a way this profile
-    // filtered out, or one the simplifier absorbed on the far side of the
-    // junction. Nothing can be said then - and for an only_* in particular,
-    // saying it anyway would forbid every way out of the junction.
+    // Either end may name a way this profile filtered out, or one the
+    // simplifier absorbed. For an only_* especially, guessing anyway would
+    // forbid every way out of the junction.
     if (!arrivals.length || !departures.size) continue;
 
     if (kind.startsWith('only_')) {
@@ -551,21 +505,15 @@ export function turnRestrictions(g, elements) {
 }
 
 /* ------------------------------------------------------ required marking */
-/* Arcs far enough inside the drawn shape - the shape, not its bounding box: a
-   circle drawn around a village must not drag in the roads that merely fall
-   inside the enclosing square.
+/* Arcs far enough inside the drawn shape - the shape, not its bounding box.
 
-   "Far enough" is two tests, either of which admits the arc: `minInsideM`
-   metres of it are inside, or `minFraction` of it is. The metre test is there
-   to keep a motorway that clips a corner out. On its own it also throws away
-   every arc shorter than it, however completely it lies in the shape - and the
-   short arcs are the links that hold a junction together, so losing them turns
-   junctions into dead ends and the route starts turning round mid-street. The
-   fraction test is what keeps those.
+   Two tests, either of which admits the arc: `minInsideM` metres inside, or
+   `minFraction` of its length. The metre test keeps out a motorway clipping a
+   corner but on its own also drops every shorter arc, and the links holding a
+   junction together are exactly the short ones. The fraction test keeps those.
 
-   The inside *fraction* is measured in degrees then scaled by the arc's metric
-   length. Locally the degree-to-metre scale is constant, so this is accurate
-   without a projection round trip. */
+   The fraction is measured in degrees and scaled by metric length; locally the
+   degree-to-metre scale is constant, so this needs no projection. */
 export function markRequired(g, area, minInsideM, minFraction = config.REQUIRED_MIN_INSIDE_FRACTION) {
   const regions = area.regions;
   const boxes = regions.map((rings) => ringBounds(rings[0]));
@@ -578,8 +526,7 @@ export function markRequired(g, area, minInsideM, minFraction = config.REQUIRED_
 
   const required = new Uint8Array(g.E);
   for (let a = 0; a < g.E; a++) {
-    // A connector is downloaded so the route can reach a street, not so it
-    // drives one. Where it sits is beside the point.
+    // A connector is here to reach a street, not to be one.
     if (g.connector[a]) continue;
     const geom = g.geom[a];
     let gx0 = Infinity, gy0 = Infinity, gx1 = -Infinity, gy1 = -Infinity;
@@ -594,9 +541,8 @@ export function markRequired(g, area, minInsideM, minFraction = config.REQUIRED_
       if (regions.some((rings) => pointInPolygon(rings, geom[0], geom[1]))) required[a] = 1;
       continue;
     }
-    // Summed across zones: the zones are merged before they get here, so they
-    // never overlap, and a street running from one into the next is required on
-    // the strength of both halves together.
+    // Summed across zones. They are merged before they get here so they never
+    // overlap, and a street crossing from one into the next counts as a whole.
     let degInside = 0;
     for (let k = 0; k < regions.length && degInside < degTotal; k++) {
       const [bx0, by0, bx1, by1] = boxes[k];
@@ -610,8 +556,8 @@ export function markRequired(g, area, minInsideM, minFraction = config.REQUIRED_
   return required;
 }
 
-/* Physical road length of a set of arcs. A two-way street is two arcs over one
-   strip of tarmac, so each such arc counts half. */
+// Physical road length. A two-way street is two arcs over one strip of tarmac,
+// so each counts half.
 export function centerlineKm(g, arcs) {
   let total = 0;
   for (const a of arcs) total += g.length[a] * (g.reciprocal[a] >= 0 ? 0.5 : 1);
@@ -629,11 +575,9 @@ export function coverageSummary(r) {
   const pct = r.centerline_km_in_area > 0 ? 100 * r.centerline_km_covered / r.centerline_km_in_area : 0;
   let text = `covers ${pct.toFixed(1)}% of roads in the drawn area `
     + `(${r.centerline_km_covered.toFixed(1)} of ${r.centerline_km_in_area.toFixed(1)} km)`;
-  // Deliberately vague about the cause, because it varies and guessing at it
-  // was worse than saying nothing: a one-way whose way back lies outside the
-  // fetch box, a street reachable only through a road this profile does not
-  // download, and a slip road you can leave but not re-enter all end up here,
-  // and they need completely different fixes.
+  // Deliberately vague about the cause: one-ways clipped by the fetch box,
+  // streets reachable only through undownloaded roads and slip roads you cannot
+  // re-enter all land here, and naming the wrong one is worse than saying none.
   if (r.km_dropped_not_strongly_connected > 0.05) {
     const fragments = Math.max(r.strong_components - 1, 0);
     text += ` - ${r.km_dropped_not_strongly_connected.toFixed(1)} km could not be reached `
@@ -660,8 +604,7 @@ export function coverageToDict(r) {
 
 const round = (v, d) => Math.round(v * 10 ** d) / 10 ** d;
 
-/* Fetch, mark required arcs and prune to the largest strongly connected
-   component. Returns { graph, required, restricted, report }. */
+// Fetch, mark required arcs, prune to the largest strongly connected component.
 export async function prepare(area, { bufferM, snapDeg, minInsideM,
                                       includePrivate = false, progress = null, cache = null }) {
   const say = progress || (() => {});
@@ -719,10 +662,8 @@ export async function prepare(area, { bufferM, snapDeg, minInsideM,
 }
 
 /* Graph node closest to a point, among `candidates` (a node mask) if given.
-
-   The route's start must be a node the tour actually visits, and plenty of
-   nodes in the fetch buffer are never driven - so the caller passes the tour's
-   own nodes and the pin snaps onto the drive rather than to a road beside it. */
+   The start must be a node the tour visits, and plenty of nodes in the fetch
+   buffer are never driven, so the caller passes the tour's own nodes. */
 export function nearestNode(g, lon, lat, candidates = null) {
   let best = -1, bestD = Infinity;
   for (let v = 0; v < g.N; v++) {

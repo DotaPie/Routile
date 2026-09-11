@@ -1,22 +1,18 @@
 /* Minimum-cost flow on the road graph itself.
 
-   Successive shortest paths with node potentials: repeatedly send flow along
-   the cheapest path from a super-source (feeding every node with supply) to a
-   super-sink (draining every node with demand), using Dijkstra on reduced
-   costs so that negative residual arcs never appear. Each search stops the
-   moment the sink is settled; the standard partial-potential update keeps
-   reduced costs non-negative anyway.
+   Successive shortest paths with node potentials: send flow along the cheapest
+   path from a super-source to a super-sink, Dijkstra on reduced costs so
+   negative residual arcs never appear. Each search stops as soon as the sink
+   settles; the partial-potential update keeps reduced costs non-negative.
 
-   The graph arcs are uncapacitated, so every augmentation saturates a supply
-   or a demand, and the number of searches is bounded by the number of
-   imbalanced junctions - a few dozen to a few hundred in a town.
+   Graph arcs are uncapacitated, so every augmentation saturates a supply or a
+   demand and the number of searches is bounded by the imbalanced junctions.
 
-   Sign convention matches the caller: demand > 0 means the node must *receive*
-   that much flow, demand < 0 that it must send it. Demands must sum to zero.
+   demand > 0 means the node must receive that much, < 0 that it must send it.
+   Demands must sum to zero.
 
-   The residual network is built once per graph and only its capacities are
-   reset per solve, because one-way mode calls this dozens of times on the same
-   roads with different demands. */
+   The residual network is built once per graph and only capacities are reset
+   per solve, because one-way mode calls this dozens of times. */
 
 import { MinHeap } from './graph.js';
 
@@ -63,9 +59,8 @@ export class MinCostFlow {
     this.heap = new MinHeap();
   }
 
-  /* Extra traversals per graph arc that balance every node. Throws when the
-     demands cannot be met, which on a strongly connected graph means the
-     demands were computed wrongly. */
+  // Extra traversals per graph arc that balance every node. Throwing here means
+  // the demands were computed wrongly, given a strongly connected graph.
   solve(demands) {
     const { N, E, s, t, cap } = this;
     let need = 0;

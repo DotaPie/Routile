@@ -1,8 +1,7 @@
-/* One theme for the UI: dark, whichever basemap is on under it. Every colour
-   is a variable, so nothing downstream hardcodes a shade and a light UI would
-   be a matter of redefining these. A light panel was dropped because the brand
-   green, which reads well on ink, washes out on white; the map is the one part
-   that goes light, and it has its own set of variables below. */
+/* One theme for the UI: dark, whichever basemap is under it. Every colour is a
+   variable, so a light UI would be a matter of redefining these. A light panel
+   was dropped because the brand green washes out on white; the map is the one
+   part that goes light, with its own variables below. */
 :root {
   color-scheme: dark;
   --bg: #0f1316;
@@ -32,15 +31,11 @@
   --shadow-lg: 0 2px 6px rgba(0, 0, 0, 0.42), 0 12px 28px rgba(0, 0, 0, 0.38);
 }
 
-/* The map's own colours, kept apart from the panel's because they answer to
-   the basemap rather than to the UI - and the basemap is the one thing the
-   day/night button changes. --map-bg is the colour behind the tiles and,
-   doing double duty, the halo the arrows and waypoint dots are ringed in;
-   --map-ink fills those dots, and so is the opposite of the ground. The zone
-   green goes deeper on the light map, where the brand's own green washes out.
-
-   The dark set sits on bare :root rather than behind an attribute, so the map
-   is dressed before any script has run and cannot flash unstyled. */
+/* The map's own colours, apart from the panel's because they answer to the
+   basemap. --map-bg is behind the tiles and doubles as the halo around arrows
+   and dots; --map-ink fills those dots. The zone green goes deeper on the light
+   map. The dark set sits on bare :root, so the map is dressed before any script
+   runs and cannot flash unstyled. */
 :root {
   --map-bg: #0b0f12;
   --map-ink: #e8eef2;
@@ -67,10 +62,9 @@ html, body {
 
 #shell { display: flex; height: 100%; }
 
-/* A column, so the repo link at the foot can claim the leftover height with
-   margin-top:auto. Every child is fixed at its own height - a column flex
-   container would otherwise squeeze them to fit rather than let the panel
-   scroll, which is what overflow-y is here for. */
+/* A column, so the repo link can claim the leftover height with
+   margin-top:auto. Children are fixed at their own height, or the flex
+   container squeezes them to fit instead of letting the panel scroll. */
 #panel {
   width: 388px;
   min-width: 388px;
@@ -78,15 +72,13 @@ html, body {
   overflow-y: auto;
   background: var(--panel);
   border-right: 1px solid var(--line);
-  /* Little at the foot: the last thing in the column is the repo link, which
-     sits right down on the bottom edge rather than floating above a margin. */
+  /* Little at the foot: the repo link sits on the bottom edge. */
   padding: 22px 22px 12px;
 }
 #panel > * { flex: 0 0 auto; }
 
-/* The map and the things that float over it. On a desktop the search box and
-   the session list are absolutely positioned on top; on a phone they drop out
-   of the way below the map, so the map itself keeps most of the screen. */
+/* The map and what floats over it. On a desktop the search and the session list
+   are positioned on top; on a phone they drop below it. */
 #stage {
   flex: 1; min-width: 0; min-height: 0;
   position: relative;
@@ -103,8 +95,7 @@ html, body {
   font-size: 22px; font-weight: 600; letter-spacing: -0.015em;
   white-space: nowrap;
 }
-/* The R. Sized so its stem stands cap-high on the text baseline, with the
-   destination dot hanging just below it like a dropped pin. */
+/* The R: stem cap-high on the text baseline, dot hanging below like a pin. */
 .logo {
   width: 0.86em; height: 1.12em;
   vertical-align: -0.19em;
@@ -116,10 +107,9 @@ html, body {
 .logo-dot { fill: currentColor; stroke: none; }
 
 /* --------------------------------------------------------- floating cards */
-/* One bar across the top of the map: the tools, then the place search. Its
-   width is left at max-content rather than clamped to the stage, so the script
-   can measure what the bar actually wants and squish or stack it (see
-   layoutOverlays) instead of letting it silently crush the search box. */
+/* Tools then place search. Width left at max-content rather than clamped to the
+   stage, so layoutOverlays() can measure what the bar wants instead of letting
+   it silently crush the search box. */
 #topbar {
   position: absolute;
   z-index: 500;
@@ -138,14 +128,12 @@ html, body {
 }
 
 /* --------------------------------------------------- picker and search */
-/* The two of them are one piece, because on a narrow window they leave the
-   bar together (see "the finder steps outside" below). While they are on the
-   bar the wrapper generates no box at all, so the bar lays out - and measures
-   - exactly as if its children were the picker and the search themselves. */
+/* One piece, because on a narrow window they leave the bar together (see "the
+   finder steps outside"). display:contents generates no box, so the bar lays
+   out and measures as if the picker and search were its own children. */
 .findbar { display: contents; }
 
 /* ------------------------------------------------------------ place search */
-/* The right-hand end of the top bar, past the tools. */
 .search {
   display: flex; align-items: center; gap: 6px;
   min-width: 0; padding-left: 8px;
@@ -156,8 +144,8 @@ html, body {
   fill: none; stroke: currentColor; stroke-width: 1.9;
   stroke-linecap: round; stroke-linejoin: round;
 }
-/* Fixed rather than flexible: a field that quietly shrinks would hide the fact
-   that the bar has run out of room, which is the signal the layout runs on. */
+/* Fixed, not flexible: a field that shrinks would hide the bar running out of
+   room, which is the signal the layout runs on. */
 .search input {
   width: 190px; flex: 0 0 auto;
   font: inherit; font-size: 13px;
@@ -185,10 +173,8 @@ html, body {
 }
 
 /* ------------------------------------------------------------ map picker */
-/* Last on the bar, past the search. Built rather than a native <select>: that
-   popup is an OS window, so it keeps its own square corners and its own
-   highlight colour whatever the page asks for. This one is a card like the
-   bar it hangs from, and the chosen row wears the accent. */
+/* Built rather than a native <select>, whose popup is an OS window and keeps
+   its own corners and highlight colour whatever the page asks for. */
 .basemap { position: relative; padding-left: 8px; }
 .basemap-button {
   display: flex; align-items: center; gap: 5px;
@@ -213,9 +199,8 @@ html, body {
 .basemap-chevron { width: 14px; height: 14px; color: var(--ink-3); }
 [aria-expanded="true"] .basemap-chevron { transform: rotate(180deg); }
 
-/* Hangs below the bar and wide enough for the longest name rather than sized
-   to the button - a list narrower than its rows is what made the native one
-   look pinched. Anchored left, since the picker sits mid-bar now. */
+/* Wide enough for the longest name rather than sized to the button, which is
+   what made the native one look pinched. Anchored left; the picker is mid-bar. */
 .basemap-list {
   position: absolute;
   z-index: 20;
@@ -239,7 +224,7 @@ html, body {
   transition: background 0.12s ease, color 0.12s ease;
 }
 .basemap-list li:hover { background: var(--hover); color: var(--ink); }
-/* The chosen one, in the accent the rest of the bar uses for "this is on". */
+/* The chosen one, in the accent the bar uses for "this is on". */
 .basemap-list li[aria-selected="true"] {
   color: var(--accent);
   background: var(--accent-soft);
@@ -262,8 +247,7 @@ html, body {
   transition: background 0.12s ease, color 0.12s ease;
 }
 .tool:hover { background: var(--hover); color: var(--ink); }
-/* Hairlines between pan, the shape tools, the start pin and clear, so six
-   buttons still read as four groups. */
+/* Hairlines, so six buttons read as four groups. */
 .tool-sep {
   flex: 0 0 auto; align-self: stretch;
   width: 1px; margin: 3px 2px;
@@ -275,20 +259,16 @@ html, body {
   fill: none; stroke: currentColor; stroke-width: 1.7;
   stroke-linecap: round; stroke-linejoin: round;
 }
-/* A start is on the map: the pin glyph wears the accent, so the tool bar says
-   so without a second glyph. While the tool itself is armed the button is
-   already accent-filled, so the glyph goes back to the on-accent ink or it
-   would vanish into its own background. */
+/* A start is on the map, so the pin glyph wears the accent. Not while the tool
+   is armed - the button is accent-filled and the glyph would vanish into it. */
 .tool.has-start:not(.active) svg { color: var(--accent); }
 .tool.danger:hover:not(:disabled) { background: var(--bad-soft); color: var(--bad); }
 .tool:disabled { opacity: 0.38; cursor: default; }
 .tool:disabled:hover { background: transparent; color: var(--ink-2); }
 
 /* ------------------------------------------------------------ map alert */
-/* Centred on the map, red-bordered, and it stays until dismissed. Loading a
-   file is something you did on purpose, so the answer belongs where you are
-   looking rather than as one more line down the panel. Above the top bar's
-   z-index, or it would open underneath it. */
+/* Centred on the map and stays until dismissed: loading a file is deliberate,
+   so the answer belongs where you are looking. Above the top bar's z-index. */
 .map-alert {
   position: absolute;
   z-index: 600;
@@ -327,14 +307,12 @@ html, body {
 .map-alert button:focus-visible { outline: 2px solid var(--bad); outline-offset: 2px; }
 
 /* -------------------------------------------------------------- dropzone */
-/* Last thing in the panel, below the download it is the mirror of. Dashed
-   rather than solid, which is the one border convention that reads as "put
-   something here" rather than "press me", and the whole rectangle is the
-   target - a small button would be a poor thing to aim a dragged file at. */
+/* Dashed rather than solid, the one border convention that reads as "put
+   something here" rather than "press me". The whole rectangle is the target: a
+   small button is a poor thing to aim a dragged file at. */
 .dropzone {
   display: grid; justify-items: center; gap: 2px;
-  /* The header's own margin sets the gap above; this one keeps it off the
-     Area and Start tiles below. */
+  /* Keeps it off the Area and Start tiles below. */
   margin-bottom: 18px; padding: 18px 14px;
   text-align: center;
   color: var(--ink-3);
@@ -345,8 +323,7 @@ html, body {
 }
 .dropzone:hover { background: var(--panel-2); border-color: var(--ink-3); }
 .dropzone:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-/* Held over the target: the accent, so it is unmistakable which of the two
-   panels the file is about to land in. */
+/* Held over the target, so it is clear where the file is about to land. */
 .dropzone.over {
   background: var(--accent-soft);
   border-color: var(--accent); border-style: solid;
@@ -363,13 +340,10 @@ html, body {
 .dropzone.busy { opacity: 0.6; cursor: progress; }
 
 /* ------------------------------------------------------------ repo link */
-/* A credit rather than a control: centred at the foot of the panel, at the
-   quietest ink until you point at it. The mark is a filled path rather than
-   the stroked line icons used elsewhere - it is GitHub's own.
-
-   margin-top:auto takes whatever height the form left over, which pins it to
-   the bottom; the padding is the floor, for when the form fills the panel and
-   there is no leftover to take. */
+/* A credit, not a control: quietest ink until pointed at. The mark is filled
+   rather than stroked like the other icons because it is GitHub's own.
+   margin-top:auto takes the leftover height; the padding is the floor for when
+   the form fills the panel and there is none. */
 .repo-link {
   display: flex; align-items: center; justify-content: center; gap: 8px;
   margin-top: auto; padding-top: 28px;
@@ -531,30 +505,23 @@ html, body {
 
 .leaflet-container { background: var(--map-bg); }
 
-/* OpenStreetMap publishes no dark tiles, so its dark option is the daylight
-   tile turned inside out: invert for the ground, a half turn of hue to put
-   water back to blue and parks back to green. Lifted and desaturated from a
-   straight inversion, which comes out garish - a photo negative rather than a
-   map. The gain over a purpose-built dark style is that every POI icon
-   survives: parking, shops, hospitals, all of it.
-
-   Only the tile pane is touched. Routes, zones, pins and the arrow canvas
-   live in their own panes and must keep the colours they were given. */
+/* OSM publishes no dark tiles, so its dark option is the daylight tile turned
+   inside out: invert the ground, half-turn the hue to put water back to blue,
+   then lift and desaturate, since a straight inversion is a photo negative
+   rather than a map. Every POI icon survives, which a purpose-built dark style
+   would lose. Only the tile pane: routes, zones and pins keep their colours. */
 :root[data-tiles="inverted"] .leaflet-tile-pane {
   filter: invert(1) hue-rotate(180deg) brightness(1.15) contrast(0.78) saturate(0.5);
 }
 
-/* Leaflet gives every drawn path `cursor: pointer`, which would say "click me"
-   right where you are trying to start the next zone. While a draw tool is
-   active the whole map keeps the drawing cursor, paths included. */
+/* Leaflet gives every drawn path `cursor: pointer`, saying "click me" right
+   where you are starting the next zone. Paths included. */
 #map.drawing,
 #map.drawing .leaflet-interactive { cursor: crosshair; }
 /* A finger drawing a zone must not also scroll the page or pinch the map. */
 #map.drawing { touch-action: none; }
-/* Placing the start carries the pin itself, tip on the hotspot, so it is
-   obvious that the next click drops it rather than selects something. A cursor
-   is a data URI, not a styleable element, so each basemap needs its own -
-   the dark map's pin is ringed in near-black, the light map's in white. */
+/* The cursor is the pin itself, tip on the hotspot. A cursor is a data URI, not
+   a styleable element, so each basemap needs its own ring colour. */
 #map.pinning,
 #map.pinning .leaflet-interactive {
   cursor: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='34'%20height='34'%20viewBox='0%200%2024%2024'%3E%3Cpath%20d='M12%2021s6.5-6.2%206.5-11a6.5%206.5%200%201%200-13%200C5.5%2014.8%2012%2021%2012%2021z'%20fill='%2335d29a'%20stroke='%230b1a15'%20stroke-width='1.5'/%3E%3Ccircle%20cx='12'%20cy='10'%20r='2.6'%20fill='%230b1a15'/%3E%3C/svg%3E") 17 30, crosshair;
@@ -572,14 +539,11 @@ html, body {
 #stage .search input { cursor: text; }
 
 /* ------------------------------------------------------ leaflet controls */
-/* No zoom buttons: the wheel, the keyboard and a pinch all zoom already, and
-   the top bar is the map's only set of controls. */
 .leaflet-control-attribution { background: var(--panel); color: var(--ink-2); }
 .leaflet-control-attribution a { color: var(--accent); }
 
-/* ------------------------------------------------ route arrows and dots */
-/* One canvas for all of them - see detail.js, which draws it. Nothing on it
-   is a control, so it must never take the pointer away from the map under it. */
+/* --------------------------------------------- route arrows and dots */
+/* One canvas, drawn by detail.js. Nothing on it is a control. */
 .route-detail { pointer-events: none; }
 
 /* ------------------------------------------------------ session legend */
@@ -607,8 +571,7 @@ html, body {
   background: transparent; border: 0; border-radius: 8px;
   transition: background 0.12s ease;
 }
-/* The lit row wears the accent as a border and a tint: a shade of the glass
-   alone is too close to the glass to see, on a dark map above all. */
+/* Accent border and tint: a shade of the glass alone is too close to see. */
 .legend-item:hover, .legend-item.active {
   background: var(--accent-soft);
   box-shadow: inset 0 0 0 1.5px var(--accent);
@@ -638,31 +601,22 @@ html, body {
 
 /* ------------------------------------------------- the bar giving way */
 /* Three steps, each switched on by layoutOverlays() once it has measured that
-   the bar no longer clears the session list beside it. First the tools drop
-   their labels and go to icons only... */
+   the bar no longer clears the session list. First, tools drop their labels. */
 #stage.tools-tight .tool span { display: none; }
 #stage.tools-tight .tool { padding: 8px 10px; }
 #stage.tools-tight .tool-sep { margin: 3px 0; }
 
-/* ... then the bar gives up the centre. The sessions sit in the right corner,
-   so the room that is left is all on the left; centred, the bar would rather
-   dock than use it. */
+/* Then the bar gives up the centre: the sessions are in the right corner, so
+   the room left is all on the left. */
 #stage.tools-left #topbar { left: 14px; transform: none; }
 
-/* ... and if even a left-hand icon bar would run into the sessions, the answer
-   is not to fold the bar out of the map but to give the map more map. The
-   panel stacks above it, the way it does on a phone, which hands the stage the
-   panel's whole 388px - nearly always more than the bar was short by. See
-   .app-stacked below. */
+/* Third step is .app-stacked below: the panel goes above the map and hands the
+   stage its whole 388px, nearly always more than the bar was short by. */
 
 /* --------------------------------------------------------- touch devices */
-/* Set from script off (pointer: coarse), so it follows the input the device
-   actually has rather than how wide its window happens to be.
-
-   Overlay scrollbars appear only while a finger is moving, which is how a
-   panel of settings ends up looking like the whole form - there is no hint
-   that anything lies below the fold. On touch they are given a permanent
-   track instead. */
+/* Set from script off (pointer: coarse). Overlay scrollbars appear only while a
+   finger moves, so a panel of settings looks like the whole form with no hint
+   of a fold. On touch they get a permanent track. */
 .is-touch #panel, .is-touch .legend {
   scrollbar-width: thin;
   scrollbar-color: var(--line-2) transparent;
@@ -678,13 +632,10 @@ html, body {
 }
 
 /* ------------------------------------------------------- stacked layout */
-/* The phone shape, and what a narrow desktop window falls back to: the panel
-   above the map rather than beside it, so the map spans the window. Switched
-   on by layoutOverlays() - from a measurement when the top bar has run out of
-   room, and unconditionally below the breakpoint in that function.
-
-   The bar and the sessions stay floating over the map throughout, as they do
-   in a phone map app. Nothing folds out of the map any more. */
+/* The phone shape, and what a narrow desktop window falls back to: panel above
+   the map, so the map spans the window. Switched on by layoutOverlays(), by
+   measurement or unconditionally below the breakpoint. The bar and the sessions
+   keep floating over the map throughout. */
 .app-stacked #shell { flex-direction: column; }
 .app-stacked #panel {
   width: 100%; min-width: 0; border-right: 0;
@@ -696,10 +647,9 @@ html, body {
 .app-stacked #stage { flex: 1 1 auto; }
 .app-stacked #map { min-height: 46vh; }
 
-/* Stacked, the bar is as wide as the window allows and no wider, and the
-   search box is what gives: on a phone there is no width at which the tools,
-   a 190px field and the map picker all fit at their natural size, and a field
-   that shrinks is a better answer than a bar that runs off the screen. */
+/* Stacked, the bar is as wide as the window allows and the search box gives:
+   on a phone nothing fits the tools, a 190px field and the picker at once, and
+   a shrinking field beats a bar running off the screen. */
 .app-stacked #topbar {
   width: auto;
   max-width: calc(100% - 20px);
@@ -707,14 +657,11 @@ html, body {
   transform: none;
 }
 .app-stacked .search { flex: 1 1 60px; }
-/* A floor of roughly four compact buttons. Past that the field stops being a
-   field - it is the point where "Search a place" no longer fits its own
-   placeholder - so the bar overflows instead, and that overflow is the signal
-   layoutOverlays() reads to move the tools out of the way. */
+/* A floor: below this the placeholder no longer fits, so the bar overflows
+   instead - and that overflow is the signal layoutOverlays() reads. */
 .app-stacked .search input { width: auto; flex: 1 1 auto; min-width: 150px; }
 
-/* The bar now spans the width, so the sessions cannot share the top line with
-   it the way they do beside a centred bar - they go under it instead. */
+/* The bar spans the width now, so the sessions go under it. */
 .app-stacked .legend {
   top: 66px;
   max-height: calc(100% - 80px);
@@ -722,40 +669,33 @@ html, body {
 
 /* ----------------------------------------------- the finder steps outside */
 /* Narrower still, and the bar cannot hold the tools, the picker and a usable
-   search box at once. The picker and the search are the part that does not
-   need to be over the map - you type into them, you do not aim them at
-   anything - so they take a strip of their own above it, where the field can
-   have the whole width, and the tools keep the floating bar. The tools are
-   the half that wants to stay on the map: they are icons by now, and you use
-   them with the other hand on the map itself.
+   search box at once. Picker and search do not need to be over the map - you
+   type into them - so they take a strip above it and the tools, icons by now,
+   keep the floating bar.
 
-   The strip is the same #findbar, moved in the DOM to sit before #map in the
-   stage's flex column - see layoutOverlays(), which moves it back when the
-   window grows. A CSS `order` could not do it: the finder is a child of the
-   bar, not a sibling of the map. */
+   The strip is the same #findbar, moved in the DOM before #map in the stage's
+   column by layoutOverlays(), which moves it back when the window grows. A CSS
+   `order` cannot do it: the finder is a child of the bar, not a sibling of the
+   map. */
 #stage.find-above #findbar {
-  /* A flex item in the stage's column now, and the map below it is greedy -
-     without this the strip is squeezed to a sliver. */
+  /* flex:0 0 auto, or the greedy map below squeezes the strip to a sliver. */
   display: flex; align-items: center;
   flex: 0 0 auto;
   padding: 4px 10px;
   background: var(--panel);
   border-bottom: 1px solid var(--line);
-  /* The picker's popup hangs out of the strip and over the map - and over the
-     floating bar, which is directly below the strip and would otherwise cover
-     the first row or two of it. Above the bar's 500, below the alert's 600. */
+  /* The picker's popup hangs over the floating bar directly below the strip.
+     Above the bar's 500, below the alert's 600. */
   position: relative;
   z-index: 550;
 }
-/* Its hairline led the picker off the tools; there is nothing to its left on
-   the strip any more. */
+/* Its hairline led the picker off the tools; nothing is to its left now. */
 #stage.find-above #basemap-sep { display: none; }
 #stage.find-above .basemap { padding-left: 0; }
-/* The bar it left behind holds icons alone, so it can sit back in the middle -
-   but it is still positioned against the stage, and the stage now starts with
-   the strip. Both it and the sessions clear that: --find-strip is the strip's
-   measured height, written by layoutOverlays() so the numbers cannot rot if
-   the field or the picker ever change size. */
+/* The bar holds icons alone now, so it sits back in the middle - but it is
+   positioned against the stage, which now starts with the strip. --find-strip
+   is that strip's measured height, written by layoutOverlays() so the numbers
+   cannot rot if the field or picker change size. */
 #stage.find-above #topbar {
   top: calc(var(--find-strip, 44px) + 14px);
   left: 50%; right: auto;

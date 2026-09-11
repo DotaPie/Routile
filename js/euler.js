@@ -1,20 +1,16 @@
 /* Turn an arc multiset into a closed tour that a human would enjoy driving.
 
-   Total distance is *invariant* across all Eulerian circuits of a given
-   multigraph, but the number of waypoints needed is not: breaks happen
-   wherever the tour stops being the fastest path between two points, so a tour
-   that thrashes across a neighbourhood costs far more waypoints than one that
-   sweeps it street by street.
+   Total distance is invariant across all Eulerian circuits of a multigraph, but
+   the waypoint count is not: breaks happen wherever the tour stops being the
+   fastest path between two points, so a tour that thrashes across a
+   neighbourhood costs far more waypoints than one that sweeps it street by
+   street. Textbook Hierholzer picks arbitrary arcs and splice points, which
+   maximises that thrashing; here each walk is grown with a driver's preferences
+   and subtours are spliced where they attach. Same asymptotics, 58-78% fewer
+   street changes on grids.
 
-   The textbook Hierholzer takes an arbitrary remaining arc and splices
-   subtours at arbitrary points, which maximises that thrashing. So each closed
-   walk here is grown with a driver's preferences (stay on the named street,
-   else turn as little as possible) and subtours are spliced exactly where they
-   attach. Same asymptotics, 58-78% fewer street changes on grids.
-
-   No Fleury-style bridge checking is needed. In a balanced digraph a greedy
-   walk from v can only ever get stuck at v itself, so every greedy walk closes
-   on its own; the splice loop mops up whatever arcs are left over. */
+   No Fleury-style bridge checking: in a balanced digraph a greedy walk from v
+   can only get stuck at v, so every walk closes on its own. */
 
 import { UTURN_DEGREES } from './config.js';
 import { turnAngle } from './geo.js';
@@ -30,9 +26,8 @@ export function eulerianCircuit(g, mult, start = -1) {
   }
   if (!total) return [];
 
-  /* Best remaining arc out of `node`, arriving via `prev`. Out-arcs are stored
-     in the graph's deterministic order, so ties resolve identically every
-     run. */
+  // Best remaining arc out of `node`, arriving via `prev`. Out-arcs are in the
+  // graph's deterministic order, so ties resolve identically every run.
   const pick = (node, prev) => {
     let only = -1, count = 0;
     for (let p = g.outStart[node]; p < g.outStart[node + 1]; p++) {
@@ -67,7 +62,7 @@ export function eulerianCircuit(g, mult, start = -1) {
     return best;
   };
 
-  /* Walk greedily from `origin` until stuck - which can only be at `origin`. */
+  // Walk greedily from `origin` until stuck, which can only be at `origin`.
   const closedWalk = (origin, prev) => {
     const walk = [];
     let node = origin, last = prev;
@@ -95,15 +90,12 @@ export function eulerianCircuit(g, mult, start = -1) {
 
   const circuit = closedWalk(start, -1);
 
-  // Splice in every leftover subtour at the point it attaches, scanning from
-  // the end backwards. Attaching at the *last* visit to a junction rather than
-  // the first preserves the through-movement the greedy walk just chose: drive
-  // the street to its end, then pick up the side branches on the final pass
-  // through the junction.
-  //
-  // After an insertion we jump past the new block and walk back down through
-  // it, so its own branches get spliced too. Every position is examined once,
-  // keeping this linear in the number of arcs.
+  // Splice leftover subtours in where they attach, scanning backwards.
+  // Attaching at the *last* visit to a junction rather than the first keeps the
+  // through-movement the greedy walk chose: drive the street to its end, then
+  // pick up side branches on the final pass. After an insertion we jump past
+  // the new block and walk back down it, so its branches get spliced too -
+  // every position examined once, linear in arcs.
   let i = circuit.length;
   while (i >= 0) {
     const node = i === 0 ? start : g.head[circuit[i - 1]];
@@ -122,7 +114,7 @@ export function eulerianCircuit(g, mult, start = -1) {
   return circuit;
 }
 
-/* Array.splice with spread blows the argument limit on a big block. */
+// Array.splice with spread blows the argument limit on a big block.
 function insertAt(arr, i, items) {
   if (items.length < 10000) { arr.splice(i, 0, ...items); return; }
   const tail = arr.splice(i);
@@ -130,7 +122,7 @@ function insertAt(arr, i, items) {
   for (const x of tail) arr.push(x);
 }
 
-/* Assert the tour chains head-to-tail, closes, and uses each arc exactly. */
+// Assert the tour chains head-to-tail, closes, and uses each arc exactly.
 export function verifyCircuit(g, circuit, mult, start = -1) {
   if (!circuit.length) {
     if (mult.some((m) => m > 0)) throw new Error('empty circuit but arcs were required');
@@ -148,7 +140,7 @@ export function verifyCircuit(g, circuit, mult, start = -1) {
   }
 }
 
-/* Node sequence of a tour, length circuit.length + 1. */
+// Node sequence of a tour, length circuit.length + 1.
 export function circuitNodes(g, circuit) {
   const nodes = new Int32Array(circuit.length + 1);
   if (!circuit.length) return nodes;

@@ -1,19 +1,13 @@
 /* The area to cover: one or more drawn zones - rectangles, circles, freehand
    loops, in any mix.
 
-   Two things come apart here and keeping them apart is the point:
+   Two things stay apart here, and that is the point: the zones decide which
+   roads must be driven, the bounding box around them decides what to download.
+   Roads outside the zones are fetched but never required, so deadheading may
+   leave the area as a human driver would.
 
-   * the **zones** decide which roads must be driven;
-   * the **bounding box around all of them** decides what to download.
-
-   Draw a ring road as a circle and the roads outside it are downloaded
-   (deadheading is allowed to leave the area, as a human would) but never
-   required.
-
-   Several zones merge into one job rather than several: a road is required if
-   it lies in *any* zone, and the single tour that comes out covers the lot.
-   Deadheading between zones is what stitches them together, which is exactly
-   what driving from one neighbourhood to the next looks like. */
+   Several zones merge into one job: a road is required if it lies in any zone,
+   and deadheading between them stitches the single tour together. */
 
 import { EARTH_R, deg, rad, representativePoint, ringBounds, sphericalAreaM2 } from './geo.js';
 
@@ -23,7 +17,7 @@ const CIRCLE_SEGMENTS = 64;
 
 export class AreaError extends Error {}
 
-/* A lat/lon rectangle: left, bottom, right, top (west, south, east, north). */
+// A lat/lon rectangle: left, bottom, right, top (west, south, east, north).
 export class BBox {
   constructor(left, bottom, right, top) {
     this.left = left; this.bottom = bottom; this.right = right; this.top = top;
@@ -62,7 +56,7 @@ export class BBox {
     }
   }
 
-  /* Expand outward to a fixed grid so nearby drags share one Overpass hit. */
+  // Expand outward to a fixed grid so nearby drags share one Overpass hit.
   snapOut(gridDeg) {
     if (gridDeg <= 0) return this;
     return new BBox(
@@ -73,11 +67,9 @@ export class BBox {
     );
   }
 
-  /* Grow by an approximately equal distance on all four sides.
-
-     Longitude degrees shrink with latitude, so the widest latitude edge is
-     used for the longitude conversion - that over-buffers slightly, which is
-     the safe direction for a fetch margin. */
+  // Grow by roughly equal distance on all four sides. Longitude degrees shrink
+  // with latitude, so the widest latitude edge drives the longitude conversion;
+  // that over-buffers slightly, the safe direction for a fetch margin.
   bufferM(metres) {
     if (metres <= 0) return this;
     const dlat = deg(metres / EARTH_R);
@@ -123,7 +115,7 @@ function circleShape(data) {
   return { kind: 'circle', lon, lat, radius };
 }
 
-/* [lat, lon] pairs in, an unclosed ring of [lon, lat] out. */
+// [lat, lon] pairs in, an unclosed ring of [lon, lat] out.
 function parseRing(raw, what) {
   const points = [];
   for (const item of raw || []) {
@@ -131,8 +123,8 @@ function parseRing(raw, what) {
     if (Array.isArray(item)) { lat = num(item[0], 'lat'); lon = num(item[1], 'lon'); }
     else if (item && typeof item === 'object') { lat = num(item.lat, 'lat'); lon = num(item.lon ?? item.lng, 'lon'); }
     else throw new AreaError(`that ${what} has a malformed point`);
-    // Freehand drawing emits repeats whenever the pointer pauses, and a merged
-    // ring arrives closed; either way, drop the duplicate.
+    // Freehand emits repeats when the pointer pauses, and a merged ring arrives
+    // closed; either way, drop the duplicate.
     const last = points[points.length - 1];
     if (!last || last[0] !== lon || last[1] !== lat) points.push([lon, lat]);
   }
@@ -151,8 +143,8 @@ function polygonShape(data) {
   return { kind: 'polygon', points, holes };
 }
 
-/* Several zones as one area. Nested multis are flattened, so a payload built
-   by appending to an existing one cannot grow a tree. */
+// Several zones as one area. Nested multis are flattened, so a payload built
+// by appending to an existing one cannot grow a tree.
 function multiShape(data) {
   const raw = data.shapes || data.parts || [];
   if (!Array.isArray(raw) || raw.length === 0) throw new AreaError('no zones drawn yet');
@@ -167,11 +159,9 @@ function multiShape(data) {
   return parts.length === 1 ? parts[0] : { kind: 'multi', parts };
 }
 
-/* A metric circle as a lat/lon ring.
-
-   Longitude degrees shrink with latitude, so a circle of fixed radius is an
-   ellipse in degrees. Building it that way keeps the circle drawn on the map
-   and the roads picked as required in agreement. */
+// A metric circle as a lat/lon ring. Longitude degrees shrink with latitude, so
+// a fixed-radius circle is an ellipse in degrees; building it that way keeps
+// the drawn circle and the roads picked as required in agreement.
 function circleRing(lon, lat, radiusM) {
   const dlat = deg(radiusM / EARTH_R);
   const cosLat = Math.max(Math.cos(rad(lat)), 1e-6);
@@ -184,7 +174,7 @@ function circleRing(lon, lat, radiusM) {
   return ring;
 }
 
-/* One zone as a polygon: its outline first, then any holes. */
+// One zone as a polygon: outline first, then any holes.
 function ringsOfShape(shape) {
   if (shape.kind === 'rect') {
     return [new BBox(shape.left, shape.bottom, shape.right, shape.top).ring()];
@@ -216,14 +206,13 @@ export class Area {
     this.bounds = new BBox(l, b, r, t);   // what to download, not what to cover
   }
 
-  /* From the UI's payload: {type: 'rect' | 'circle' | 'freehand' | 'multi'}. */
+  // From the UI's payload: {type: 'rect' | 'circle' | 'freehand' | 'multi'}.
   static fromShape(data) {
     return new Area(parseShape(data));
   }
 
-  /* A point inside the area, for the default start. With several zones it is
-     the biggest one that gets the pin - the drive spends most of its time
-     there, so starting there beats starting in whichever was drawn first. */
+  // A point inside the area, for the default start. With several zones the
+  // biggest gets the pin, since the drive spends most of its time there.
   get center() {
     if (this.kind === 'multi') {
       let best = null;
@@ -239,8 +228,8 @@ export class Area {
     return representativePoint(this.ring);
   }
 
-  /* Zones reach here already merged, so they never overlap and this is a plain
-     sum: each outline less whatever its holes take back out. */
+  // Zones arrive merged, so they never overlap and this is a plain sum: each
+  // outline less whatever its holes take back out.
   areaKm2() {
     let total = 0;
     for (const rings of this.regions) {
@@ -251,9 +240,8 @@ export class Area {
   }
 
   validate(maxAreaKm2) {
-    // The box is checked for sane coordinates only, never against the cap: a
-    // circle's bounding box is 27% larger than the circle, so capping on the
-    // box would refuse an area that is in fact within the limit.
+    // Coordinates only, never the cap: a circle's bounding box is 27% larger
+    // than the circle, so capping on the box would refuse a legal area.
     this.bounds.validate(Infinity);
     const area = this.areaKm2();
     if (!(area > 0)) throw new AreaError('the drawn area has no size');
@@ -262,8 +250,8 @@ export class Area {
     }
   }
 
-  /* A stable text form, for cache keys. Zones are sorted, so drawing the same
-     two zones in the other order hits the same cached result. */
+  // A stable text form for cache keys. Zones are sorted, so drawing the same
+  // two in the other order hits the same cached result.
   key(decimals = 6) {
     return this.parts.map((s) => shapeKey(s, decimals)).sort().join('+');
   }

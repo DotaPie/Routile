@@ -1,9 +1,6 @@
-/* IndexedDB cache: Overpass downloads and computed routes.
-
-   Overpass is slow and flaky, and a route takes seconds to compute, so both
-   are kept. Everything is regenerable; the cache is a convenience and degrades
-   to a no-op wherever IndexedDB is unavailable (private windows, blocked
-   storage) rather than ever failing a compute. */
+/* IndexedDB cache for Overpass downloads and computed routes. Everything in it
+   is regenerable, so it degrades to a no-op wherever IndexedDB is unavailable
+   rather than ever failing a compute. */
 
 const DB_NAME = 'routile';
 const DB_VERSION = 1;

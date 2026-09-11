@@ -1,12 +1,9 @@
 /* The road graph as flat typed arrays, plus the searches everything runs on.
 
-   A directed multigraph: nodes are 0..N-1, arcs are 0..E-1, and an arc is
-   identified by its index alone. Parallel arcs (two distinct ways between the
-   same pair of junctions) and self-loops (circular ways) are ordinary arcs, so
-   nothing downstream ever has to disambiguate a node pair.
-
-   Arcs are stored twice in CSR form - by tail and by head - so forward and
-   reverse searches are both a contiguous scan. */
+   A directed multigraph identified by arc index alone, so parallel arcs and
+   self-loops need no disambiguation downstream. Arcs are stored twice in CSR
+   form, by tail and by head, so forward and reverse searches are both a
+   contiguous scan. */
 
 import { MCF_TIME_SCALE } from './config.js';
 import { arcBearings } from './geo.js';
@@ -18,15 +15,12 @@ export class Graph {
      with u, v node indices, geom a flat [lon, lat, ...] Float64Array oriented
      u -> v, osmids a sorted list of OSM way ids, names/refs sorted unique.
 
-     `cost` overrides what the search charges for the arc, in the same integer
-     units travel time is scaled to. Only the turn graph uses it: a turn takes
-     no measurable time to drive but may still be one the route should pay to
-     avoid, and that price must not show up in the drive's reported duration.
+     `cost` overrides what the search charges, in the units travel time scales
+     to. Only the turn graph sets it: a price the route should pay to avoid
+     something, which must not show up in the reported duration.
 
-     `connector` marks a road that is in the graph only so the route can get
-     somewhere - see connectorFilter() in osm.js. It is drivable in every way
-     an ordinary arc is; it is simply never one the drive is required to
-     cover. */
+     `connector` marks a road present only so the route can reach something -
+     drivable like any arc, never required. See connectorFilter() in osm.js. */
   constructor(ids, xs, ys, arcs) {
     const N = ids.length, E = arcs.length;
     this.N = N; this.E = E;
@@ -53,13 +47,12 @@ export class Graph {
       this.osmKey[a] = r.osmids.join(',');
       this.names[a] = r.names; this.refs[a] = r.refs; this.highway[a] = r.highway;
       this.connector[a] = r.connector ? 1 : 0;
-      // Integer costs, so shortest-path comparisons are exact rather than
-      // epsilon-dependent. Travel-time seconds become deciseconds.
+      // Integer costs, so shortest-path comparisons are exact.
       this.cost[a] = Math.max(Math.round(r.cost ?? r.travel * MCF_TIME_SCALE), 1);
     }
 
-    // A deterministic arc order - by tail id, head id, then insertion - so
-    // identical input gives an identical tour. Every tie-break uses it.
+    // Deterministic arc order - tail id, head id, insertion - so identical
+    // input gives an identical tour. Every tie-break uses it.
     const byOrder = Array.from({ length: E }, (_, a) => a);
     byOrder.sort((a, b) =>
       (this.id[this.tail[a]] - this.id[this.tail[b]])
@@ -89,10 +82,8 @@ export class Graph {
   outDegree(v) { return this.outStart[v + 1] - this.outStart[v]; }
   inDegree(v) { return this.inStart[v + 1] - this.inStart[v]; }
 
-  /* The same strip of tarmac driven the other way, if the graph has it.
-
-     Matched on way ids and length rather than node pair, because two genuinely
-     different ways can join the same pair of junctions. */
+  // The same tarmac driven the other way. Matched on way ids and length, not
+  // node pair: two different ways can join the same pair of junctions.
   _reciprocals() {
     const rec = new Int32Array(this.E).fill(-1);
     for (let a = 0; a < this.E; a++) {
@@ -110,7 +101,7 @@ export class Graph {
     return rec;
   }
 
-  /* Identity of the street an arc belongs to, for 'stay on this road'. */
+  // Identity of the street an arc belongs to, for 'stay on this road'.
   streetKey(a) {
     if (this.names[a].length) return this.names[a].join('|');
     if (this.refs[a].length) return this.refs[a].join('|');
@@ -123,7 +114,7 @@ export class Graph {
     return '';
   }
 
-  /* [departure, arrival] bearings of an arc, or null; computed once. */
+  // [departure, arrival] bearings of an arc, or null; computed once.
   bearings(a) {
     if (!this._bearings) {
       this._bearings = new Float64Array(2 * this.E).fill(NaN);
@@ -138,8 +129,8 @@ export class Graph {
     return Number.isNaN(out) ? null : [out, this._bearings[2 * a + 1]];
   }
 
-  /* The subgraph on the nodes with keep[v] set, renumbered. Returns the graph
-     and a map from old arc index to new (or -1 if the arc was dropped). */
+  // The subgraph on the nodes with keep[v] set, renumbered, plus a map from old
+  // arc index to new (-1 if dropped).
   induced(keep) {
     const newIndex = new Int32Array(this.N).fill(-1);
     const ids = [], xs = [], ys = [];
@@ -191,7 +182,7 @@ export class MinHeap {
     this.keys[i] = key; this.vals[i] = val;
   }
 
-  /* Removes the minimum into topKey/topVal. Returns false when empty. */
+  // Removes the minimum into topKey/topVal. False when empty.
   pop() {
     if (this.size === 0) return false;
     this.topKey = this.keys[0]; this.topVal = this.vals[0];
@@ -213,9 +204,8 @@ export class MinHeap {
 }
 
 /* --------------------------------------------------------------- Dijkstra */
-/* Reusable single- or multi-source search. Arrays are allocated once and
-   stamped per run, so calling it thousands of times (the waypoint loop does)
-   costs no allocation. */
+// Reusable single- or multi-source search. Arrays are allocated once and
+// stamped per run, so the waypoint loop's thousands of calls allocate nothing.
 export class Dijkstra {
   constructor(g) {
     this.g = g;
@@ -227,9 +217,9 @@ export class Dijkstra {
     this.heap = new MinHeap();
   }
 
-  /* Options: sources (node list), reverse (follow arcs backwards), cutoff
-     (nodes beyond it are never reached), weights (per-arc, default cost),
-     target (stop once it is settled). */
+  /* sources (node list), reverse (follow arcs backwards), cutoff (nodes beyond
+     it are never reached), weights (per-arc, default cost), target (stop when
+     settled). */
   search({ sources, reverse = false, cutoff = Infinity, weights = this.g.cost, target = -1 }) {
     const g = this.g, run = ++this.run, heap = this.heap;
     this.lastReverse = reverse;
@@ -262,8 +252,8 @@ export class Dijkstra {
   has(v) { return this.settled[v] === this.run; }
   get(v) { return this.settled[v] === this.run ? this.dist[v] : Infinity; }
 
-  /* Arcs from the source that reached `v` to `v` (for a reverse search: from
-     `v` to the source), in travel order. */
+  // Arcs from the source that reached `v` to `v` - for a reverse search, from
+  // `v` to the source - in travel order.
   pathArcs(v) {
     const path = [];
     let node = v;
@@ -275,7 +265,7 @@ export class Dijkstra {
     return this.lastReverse ? path : path.reverse();
   }
 
-  /* The source a settled node was reached from. */
+  // The source a settled node was reached from.
   rootOf(v) {
     let node = v;
     while (this.parent[node] !== -1) {
@@ -287,7 +277,7 @@ export class Dijkstra {
 }
 
 /* ------------------------------------------------------------- components */
-/* Tarjan, iterative: a 20,000-node graph would blow the call stack. */
+// Tarjan, iterative: a 20,000-node graph would blow the call stack.
 export function stronglyConnectedComponents(g) {
   const N = g.N;
   const index = new Int32Array(N).fill(-1);
@@ -351,9 +341,8 @@ class UnionFind {
   }
 }
 
-/* Weakly connected components over the arcs with `mask[a]` set (all arcs when
-   mask is null). Nodes touching no such arc get component -1 unless
-   `includeIsolated`, in which case each is its own component. */
+/* Weakly connected components over the arcs with `mask[a]` set, or all arcs.
+   Nodes touching no such arc get -1, unless `includeIsolated`. */
 export function weakComponents(g, mask = null, includeIsolated = false) {
   const uf = new UnionFind(g.N);
   const touched = new Uint8Array(g.N);

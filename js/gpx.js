@@ -1,23 +1,18 @@
-/* The tour as GPX - the one output that reproduces the route exactly.
-
-   The file carries the route three ways, because apps disagree about which
-   one they will follow:
+/* The tour as GPX. The file carries the route three ways because apps disagree
+   about which they will follow:
 
    * <trk>  - the exact breadcrumb, for apps that follow a track literally.
-   * <rte>  - the waypoints as *route points*: the element that means
-              "go via here", which is what an app routing between points will
-              actually honour.
+   * <rte>  - the waypoints as route points ("go via here"), which is what an
+              app routing between points honours.
    * <wpt>  - the same points as places of interest. Drawn, never navigated to.
 
-   One file holds one continuous <trkseg>. A navigation app reads a
-   multi-segment track as several disconnected pieces and will not follow it as
-   one route. Splitting a long drive is what the per-session files are for -
-   each is one outing, small enough for any device.
+   One file, one continuous <trkseg>: a navigation app reads a multi-segment
+   track as disconnected pieces and will not follow it as one route. Splitting a
+   long drive is what the per-session files are for.
 
-   Which apps actually *follow* this: OsmAnd ("Follow track"), Locus Map and
-   Garmin units. Organic Maps will draw the track but its router is
-   point-to-point with no intermediate stops, so it plans its own way to the
-   finish and ignores everything between. */
+   Apps that actually follow this: OsmAnd ("Follow track"), Locus Map, Garmin.
+   Organic Maps draws the track but its router has no intermediate stops, so it
+   plans its own way to the finish and ignores everything between. */
 
 import { humanDuration } from './stats.js';
 
@@ -26,7 +21,7 @@ const GPX_NS = 'http://www.topografix.com/GPX/1/1';
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 const label = (n, wp) => `${String(n).padStart(4, '0')} ${wp.street || `waypoint ${n}`}`;
 
-/* GPX text for the whole route, or for one session of it. */
+// GPX text for the whole route, or for one session of it.
 export function gpxDocument(result, { session = null, name = 'Routile route' } = {}) {
   const track = result.track || [];
   const arcStart = result.arc_start || [];
@@ -73,9 +68,8 @@ export function gpxDocument(result, { session = null, name = 'Routile route' } =
   return out.join('');
 }
 
-/* The figures for *this file*, not for the whole route. A session file that
-   quotes the whole drive's distance is the number you would plan your
-   afternoon around. */
+// The figures for *this file*, not the whole route: a session file quoting the
+// whole drive's distance is the number you would plan your afternoon around.
 function describe(result, waypointCount, session) {
   const st = result.stats || {};
   const summary = (result.coverage || {}).summary || '';
@@ -87,40 +81,26 @@ function describe(result, waypointCount, session) {
     + `Part of a ${st.total_km ?? 0} km route that ${summary}.`;
 }
 
-/* When the file was made, as YYYYMMDD-HHMMSS, for the names of the zip and
-   everything in it. Two downloads of the same route are two different files
-   on the disk, and the one you want is the one you made last - which the name
-   has to say, because a downloads folder sorts by name as often as by date
-   and a second copy would otherwise arrive as "routile-route (1).zip".
+/* YYYYMMDD-HHMMSS for the zip and everything in it, so a second download of the
+   same route is a distinct, sortable file rather than "routile-route (1).zip".
 
-   The local clock, not UTC: this is stamped for the person who pressed the
-   button, and a stamp that reads three hours off is worse than none. The
-   exact instant is in metadata.json, in ISO, for anything that needs it. */
+   Local clock, not UTC: this is stamped for the person who pressed the button.
+   The exact instant is in metadata.json, in ISO. */
 export function fileStamp(when = new Date()) {
   const p = (n) => String(n).padStart(2, '0');
   return `${when.getFullYear()}${p(when.getMonth() + 1)}${p(when.getDate())}`
     + `-${p(when.getHours())}${p(when.getMinutes())}${p(when.getSeconds())}`;
 }
 
-/* The download: always one zip, whatever the session count, so what comes
-   out is the same package every time - the GPX (one file for a single
-   session, one per session otherwise) and metadata.json.
+/* The download: always one zip, so the package is the same shape every time.
+   `stamp` is passed in rather than read from the clock, so every file inside
+   carries one moment and the caller can name the zip to match.
 
-   One `stamp` for the zip and every file inside it, passed in rather than
-   read from the clock here, so the package is stamped with a single moment
-   and the caller can name the zip to match what it holds.
-
-   That last one is what makes the zip loadable back into the page. GPX has
-   nowhere to put "two passes, one way, split into two-hour sessions", nor the
-   shape that was drawn to ask for it, so none of that survives a round trip
-   through the track alone. The JSON carries the request, the drawn zones and
-   the computed result together, which is enough to put the page back exactly
-   as it was without going near Overpass or the solver again.
-
-   It does repeat geometry the GPX already holds. That is deliberate: reading
-   the track back out of the GPX would leave the arc indices that
-   gpxDocument() slices sessions with to be reconstructed, and the zip is
-   DEFLATE'd, so the copy costs far less than it looks.
+   metadata.json is what makes the zip loadable back into the page: GPX has
+   nowhere to put "two passes, one way, two-hour sessions" or the drawn shape.
+   It repeats geometry the GPX already holds, deliberately - reconstructing the
+   arc indices gpxDocument() slices sessions with would be worse, and DEFLATE
+   makes the copy cheap.
 
    Needs the JSZip global. */
 export async function gpxZip(result, { metadata = null, stamp = fileStamp() } = {}) {

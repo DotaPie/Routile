@@ -1,9 +1,8 @@
 /* End-to-end: a drawn shape in, sessions and a GPX-ready breadcrumb out.
 
-   The result is a plain JSON object holding everything the UI and the GPX
-   writer need - including the full breadcrumb track - so nothing downstream
-   has to keep the road graph alive. That keeps the worker short-lived and the
-   result trivially cacheable. */
+   The result is plain JSON holding everything the UI and the GPX writer need,
+   so nothing downstream keeps the road graph alive. That makes the worker
+   short-lived and the result trivially cacheable. */
 
 import * as config from './config.js';
 import { Area } from './area.js';
@@ -16,9 +15,8 @@ import { reduceTour } from './waypoints.js';
 import { chunkWaypoints, groupSessions, verifyChunks } from './sessions.js';
 import { summarise } from './stats.js';
 
-// Ordered phases, so the UI can show sensible progress. The min-cost flow is a
-// black box with no natural granularity - it gets an indeterminate bar rather
-// than a fake percentage.
+// Ordered phases for the progress bar. The min-cost flow has no natural
+// granularity, so it gets an indeterminate bar rather than a fake percentage.
 export const PHASES = [
   ['fetch', 'Downloading roads'],
   ['mark', 'Finding roads in the drawn area'],
@@ -45,13 +43,10 @@ function positiveFloat(raw, what) {
   return n;
 }
 
-/* Validate the UI's payload into a request. Throws with a message a user can
-   act on. */
+// Validate the UI's payload into a request, with messages a user can act on.
 export function parseRequest(payload) {
   if (!payload || typeof payload !== 'object') throw new RequestError('expected a request object');
   const area = Area.fromShape(payload.shape);
-  // No product-level size limit: draw whatever you like. The ceiling only
-  // exists so an absurd area fails clearly instead of hanging.
   area.validate(config.AREA_CAP_KM2);
 
   const passes = positiveInt(payload.passes ?? config.PASSES_DEFAULT, 'passes');
@@ -77,11 +72,11 @@ export function parseRequest(payload) {
   };
 }
 
-/* How far outside the shape to download, from its size. A request may pin it
-   (`bufferM`) for experiments; the UI never does. */
+// How far outside the shape to download. A request may pin `bufferM` for
+// experiments; the UI never does.
 export const fetchBufferM = (req) => req.bufferM ?? config.fetchBufferM(req.area.areaKm2());
 
-/* Everything that changes the answer, for the result cache. */
+// Everything that changes the answer, for the result cache.
 export function requestKey(req) {
   return JSON.stringify([
     config.ALGO_VERSION,
@@ -110,7 +105,7 @@ function makeProgress(sink) {
   };
 }
 
-/* Run the whole pipeline and return a JSON-able result. */
+// Run the whole pipeline and return a JSON-able result.
 export async function compute(req, { progress = null, cache = null } = {}) {
   const say = makeProgress(progress);
 
@@ -124,9 +119,8 @@ export async function compute(req, { progress = null, cache = null } = {}) {
   });
   const g = net.graph;
 
-  // Everything from here to the tour runs on the turn graph, where a junction
-  // movement is an arc with a price. The road graph is what the answer is
-  // expressed in, so each result crosses back as soon as it is made.
+  // Everything to the tour runs on the turn graph, where a junction movement is
+  // a priced arc. Results cross back to the road graph as soon as they are made.
   const exp = turns.expandTurns(g, { restricted: net.restricted });
 
   let mult, driven;
@@ -142,15 +136,13 @@ export async function compute(req, { progress = null, cache = null } = {}) {
     // In one-way mode the chosen direction is only knowable from the result.
     driven = oneway.requiredForStats(g, mult, oneway.groupStreets(g, net.required));
   }
-  // Turn prices are a lever on the solver, not time anyone spends driving, so
-  // the figures quoted to the user are measured on the road graph alone.
+  // Turn prices steer the solver but nobody drives them, so the figures quoted
+  // to the user are measured on the road graph alone.
   const roadMult = turns.projectMult(exp, mult);
   const tour = cpp.tourStats(g, roadMult, driven, req.passes);
 
-  // Snap the start onto the tour. The nearest node overall is often one the
-  // drive never reaches - a road in the fetch buffer, or a stub the flow step
-  // left out - and starting there would silently move the start somewhere
-  // else. Restricting to the tour's own nodes makes the pin honest.
+  // Snap the start onto the tour: the nearest node overall is often one the
+  // drive never reaches, and starting there would silently move the start.
   const onTour = new Uint8Array(g.N);
   for (let a = 0; a < g.E; a++) if (roadMult[a] > 0) onTour[g.tail[a]] = 1;
   const [lon, lat] = req.startLon !== null && req.startLat !== null
@@ -205,10 +197,9 @@ export async function compute(req, { progress = null, cache = null } = {}) {
   return result;
 }
 
-/* The full breadcrumb as [[lat, lon], ...], plus the index at which each tour
-   arc begins (one entry per arc plus a final sentinel), so the points for tour
-   arcs [a, b) are track[arc_start[a] .. arc_start[b]]. Stored once and reused
-   for both the map polyline and the GPX track. */
+/* The breadcrumb as [[lat, lon], ...], plus where each tour arc begins (one
+   entry per arc plus a sentinel), so arcs [a, b) are
+   track[arc_start[a] .. arc_start[b]]. Shared by the map and the GPX track. */
 function buildTrack(g, circuit) {
   const track = [], arcStart = [];
   let px = NaN, py = NaN;

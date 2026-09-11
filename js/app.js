@@ -10,8 +10,8 @@ const $ = (id) => document.getElementById(id);
 // The three ways to draw. Each one is a full drag gesture: press, move, release.
 const SHAPES = ['rect', 'circle', 'freehand'];
 
-/* Which basemap is showing, and so which route palette reads on it. Not a page
-   theme: the panel is dark whichever map is picked, and only the map changes. */
+// Which basemap is showing, and so which route palette reads on it. Not a page
+// theme: the panel is dark whichever map is picked.
 const BASEMAP_KEY = 'routile-basemap';
 let basemap = config.BASEMAPS[0];
 
@@ -22,9 +22,8 @@ const sessionColor = (i) => palette()[i % palette().length];
 
 const ROUTE_WEIGHT = 3;
 
-// Half a carriageway. Each pass is drawn this far to the right of its own
-// direction of travel, so a street driven both ways shows as two lines rather
-// than two identical lines on top of each other.
+// Half a carriageway: each pass is drawn this far right of its own direction of
+// travel, so a street driven both ways shows as two lines rather than one.
 const OFFSET_M = 4.5;
 const ARROW_SPACING_M = 130;
 const ARROW_ZOOM = 15;      // below this an arrow is smaller than the junction
@@ -52,16 +51,13 @@ const state = {
 };
 
 /* ------------------------------------------------------------------ map */
-// boxZoom off: Leaflet binds shift+drag to box zoom, which would fight
-// shift+drag drawing. zoomControl off for good: the wheel, the keyboard and a
-// pinch all zoom already, so two buttons for it would only be map you cannot
-// see.
+// boxZoom off: it binds shift+drag, which shift+drag drawing needs. zoomControl
+// off: the wheel, the keyboard and a pinch all zoom already.
 const map = L.map('map', { zoomControl: false, boxZoom: false })
   .setView([48.148, 17.107], 14);
 
-/* Is the thing pointing at this page a finger? Asked of the input the device
-   actually has rather than of the window's width, so a narrow desktop window
-   keeps its mouse affordances and a large tablet loses them. */
+// Asked of the input the device has, not the window width, so a narrow desktop
+// window keeps its mouse affordances and a large tablet loses them.
 const coarsePointer = window.matchMedia('(pointer: coarse)').matches;
 document.documentElement.classList.toggle('is-touch', coarsePointer);
 
@@ -71,9 +67,8 @@ map.attributionControl.setPrefix('<a href="https://leafletjs.com">Leaflet</a>');
 const cssVar = (name) =>
   getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 
-// interactive:false throughout: a drawn zone is a backdrop, not a control.
-// Left interactive it would take the pointer cursor and swallow hovers while
-// you are trying to draw the next zone on top of it.
+// interactive:false throughout: a zone is a backdrop, not a control, and would
+// otherwise swallow hovers while you draw the next one over it.
 const AREA_STYLE = () => ({
   color: cssVar('--zone'), weight: 2, fillOpacity: 0.08, interactive: false,
 });
@@ -82,8 +77,7 @@ const DRAFT_STYLE = () => ({
   interactive: false,
 });
 
-// Same glyph as the Start button in the toolbar and as the cursor that places
-// it, so all three read as the same thing.
+// Same glyph as the Start button and the cursor that places it.
 const START_ICON = L.divIcon({
   className: 'start-pin',
   html: '<svg viewBox="0 0 24 24" aria-hidden="true">'
@@ -93,21 +87,20 @@ const START_ICON = L.divIcon({
   iconAnchor: [30, 54],      // the pin's tip, not its centre, marks the spot
 });
 
-// These sit inside the map container, so Leaflet must not treat clicks and
-// drags on them as map gestures.
+// Inside the map container, so Leaflet must not read clicks and drags on them
+// as map gestures.
 for (const id of ['topbar', 'search', 'legend']) {
   L.DomEvent.disableClickPropagation($(id));
   L.DomEvent.disableScrollPropagation($(id));
 }
-// Leaflet's keyboard handler listens on the map container, which the search box
-// lives inside: without this, arrow keys would pan the map mid-word.
+// Leaflet's keyboard handler is on the map container, which the search box sits
+// inside; without this, arrow keys pan the map mid-word.
 for (const type of ['keydown', 'keyup', 'keypress']) {
   L.DomEvent.on($('search-input'), type, L.DomEvent.stopPropagation);
 }
 
-// Arrows and waypoint dots, on their own canvas. The layer redraws itself for
-// the visible area as the map moves, so their cost is set by the screen rather
-// than by the route's length.
+// Arrows and waypoint dots on their own canvas, redrawn for the visible area,
+// so their cost is set by the screen rather than the route's length.
 state.detail = new DetailLayer({
   arrowZoom: ARROW_ZOOM,
   pointZoom: POINT_ZOOM,
@@ -115,54 +108,44 @@ state.detail = new DetailLayer({
   dot: cssVar('--map-ink'),
 }).addTo(map);
 
-// The map shares the stage with the top bar and the session list, and once
-// those dock they take real height from it. Laid out first, then Leaflet is
-// told - otherwise it keeps drawing for the size it had.
+// The docked top bar and session list take real height from the map. Lay out
+// first, then tell Leaflet, or it keeps drawing for the size it had.
 new ResizeObserver(() => {
   layoutOverlays();
   map.invalidateSize({ animate: false });
 }).observe($('stage'));
 
 /* ------------------------------------------------------------- basemap */
-/* The maps on offer are declared in config.js; this builds the picker from
-   them and dresses the page to match whichever is chosen. The CARTO ones need
-   a key and drop out of the list without one. */
+// Declared in config.js. The CARTO ones need a key and drop out without one.
 const BASEMAP_CHOICES = config.BASEMAPS.filter(
   (m) => !m.needsKey || config.CARTO_API_KEY);
 
 let tileLayer = null;
 
-/* {r} is Leaflet's retina placeholder: '@2x' on a hidpi screen and empty
-   elsewhere, so a sharp screen gets sharp tiles for the same one request per
-   tile. OSM serves no @2x, so only CARTO's URLs carry it. */
+// {r} in a URL is Leaflet's retina placeholder: '@2x' on a hidpi screen, empty
+// elsewhere. OSM serves no @2x, so only CARTO's URLs carry it.
 function addTiles(spec) {
   const url = spec.needsKey
     ? `${spec.url}?key=${encodeURIComponent(config.CARTO_API_KEY)}`
     : spec.url;
   const next = L.tileLayer(url, {
     maxZoom: spec.maxZoom,
-    // Fetched with CORS, so the same cached tiles may be drawn onto the canvas
-    // behind the exported map image. Both tile servers allow any origin.
+    // CORS, so the cached tiles can be drawn onto the exported image's canvas.
     crossOrigin: 'anonymous',
     attribution: spec.attribution,
   });
-  // The new tiles go under everything already drawn, and the old layer is only
-  // dropped once they have loaded - otherwise the switch flashes the empty
-  // container colour across the whole map.
+  // New tiles go under what is drawn, and the old layer only goes once they
+  // load, or the switch flashes the empty container colour.
   next.addTo(map);
   next.getContainer().style.zIndex = 1;
   const old = tileLayer;
   tileLayer = next;
   if (old) next.once('load', () => map.removeLayer(old));
 
-  /* A keyed basemap can fail wholesale rather than tile by tile: CARTO binds a
-     key to one origin, so it serves nothing from anywhere else - a local
-     checkout included - and a spent quota would look the same. That failure is
-     a blank map, which says nothing about what went wrong, so fall back to the
-     basemap that needs no key and let the picker say so.
-
-     Counted rather than tripped on the first error, since one tile can fail on
-     its own for reasons that are nobody's fault. */
+  // A keyed basemap fails wholesale, not tile by tile: CARTO binds a key to one
+  // origin and a spent quota looks the same, and either way it is a blank map.
+  // Fall back to the keyless one. Counted, not tripped on the first error,
+  // since a single tile can fail for reasons that are nobody's fault.
   if (!spec.needsKey) return;
   let bad = 0;
   next.on('tileerror', () => {
@@ -173,17 +156,15 @@ function addTiles(spec) {
   });
 }
 
-/* Picking a map changes everything drawn on top of it too: the marks answer to
-   the ground they sit on, not to the panel, so the route palette, the zone
-   green and the arrows' halo all move with the tiles. Those come from the
-   [data-map] block in the stylesheet, so the attribute is stamped first and
-   everything that reads a variable is refreshed after. */
+/* The marks answer to the ground they sit on, so palette, zone green and halo
+   all move with the tiles. They come from the [data-map] block in the
+   stylesheet: stamp the attribute first, refresh everything that reads a
+   variable after. */
 function setBasemap(id, { save = true } = {}) {
   basemap = BASEMAP_CHOICES.find((m) => m.id === id) || BASEMAP_CHOICES[0];
   const root = document.documentElement;
   root.dataset.map = basemap.dark ? 'dark' : 'light';
-  // OSM publishes no dark tiles, so its dark option is the daylight tile put
-  // through the inversion filter in the stylesheet.
+  // OSM publishes no dark tiles; its dark option is the daylight tile inverted.
   if (basemap.invert) root.dataset.tiles = 'inverted';
   else delete root.dataset.tiles;
   addTiles(basemap);
@@ -219,16 +200,14 @@ $('basemap-list').innerHTML = BASEMAP_CHOICES.map(
   (m) => `<li role="option" aria-selected="false" data-id="${m.id}">`
        + `${escapeHtml(m.label)}</li>`).join('');
 
-// One map on offer is not a choice; the picker and its hairline only appear
-// when there are two. That is the keyless case - see BASEMAPS in config.js.
+// One map on offer is not a choice. That is the keyless case.
 const onlyOneMap = BASEMAP_CHOICES.length < 2;
 $('basemap-field').classList.toggle('hidden', onlyOneMap);
 $('basemap-sep').classList.toggle('hidden', onlyOneMap);
 
-/* Open state lives in aria-expanded, so the attribute that tells a screen
-   reader is the same one the stylesheet turns the chevron with - they cannot
-   drift apart. `cursor` is the keyboard's position, which is not the
-   selection until Enter. */
+// Open state lives in aria-expanded, so the attribute a screen reader reads is
+// the one the stylesheet turns the chevron with. `cursor` is the keyboard's
+// position, which is not the selection until Enter.
 function pickerOpen() { return $('basemap-button').getAttribute('aria-expanded') === 'true'; }
 
 function openPicker(open) {
@@ -266,8 +245,7 @@ $('basemap-list').addEventListener('click', (ev) => {
   $('basemap-button').focus();
 });
 
-// Hover and keyboard share one cursor, so moving the mouse does not leave a
-// stale highlight somewhere else in the list.
+// Hover and keyboard share one cursor, so the mouse leaves no stale highlight.
 $('basemap-list').addEventListener('mousemove', (ev) => {
   const li = ev.target.closest('li');
   if (li) moveCursor([...$('basemap-list').children].indexOf(li));
@@ -300,11 +278,9 @@ $('basemap-field').addEventListener('keydown', (ev) => {
 document.addEventListener('pointerdown', (ev) => {
   if (pickerOpen() && !$('basemap-field').contains(ev.target)) openPicker(false);
 });
-/* Tabbing away closes it. Only tabbing: relatedTarget is null when focus
-   lands on something that cannot take it, and a list row is exactly that - so
-   without this guard, pressing the pointer down on a row closed the list out
-   from under the click that was about to select it. A click anywhere else is
-   the pointerdown handler's job above. */
+// Tabbing away closes it, and only tabbing: relatedTarget is null when focus
+// lands on something that cannot take it, and a list row is exactly that, so
+// without the guard a pointerdown on a row closed the list out from under it.
 $('basemap-field').addEventListener('focusout', (ev) => {
   if (!ev.relatedTarget) return;
   if (pickerOpen() && !$('basemap-field').contains(ev.relatedTarget)) openPicker(false);
@@ -315,23 +291,19 @@ try { storedMap = localStorage.getItem(BASEMAP_KEY); } catch (err) { /* private 
 setBasemap(storedMap || config.BASEMAP_DEFAULT, { save: false });
 
 /* -------------------------------------------------------------- drawing */
-/* One gesture, three shapes, and one code path for a mouse, a finger and a
-   pen: pointer events cover all three. `drag.tool` is fixed at the press so
-   a key released mid-drag cannot change what is being drawn.
+/* One gesture, three shapes, one code path for mouse, finger and pen.
+   `drag.tool` is fixed at the press, so a key released mid-drag cannot change
+   what is being drawn.
 
-   Two ways to draw the same shape, and the hand decides which without being
-   asked: hold the button down and the shape follows the drag, or click once
-   and let go and it follows the bare pointer until a second click ends it.
-   The second way is what a long outline wants - a held button across a whole
-   suburb is a cramp - and it costs nothing to offer, because a press that
-   goes nowhere before it is released could not have been a drag anyway.
-   `drag.sticky` says which one is under way.
+   Two ways to draw, and the hand picks without being asked: hold the button and
+   the shape follows the drag, or click once and it follows the bare pointer
+   until a second click ends it. The second suits a long outline, and costs
+   nothing to offer, since a press that goes nowhere was never a drag.
+   `drag.sticky` says which is under way.
 
-   The pointer is captured for the held kind, so a drag that leaves the map
-   keeps reporting and a release anywhere still finishes the shape. While a
-   shape tool is armed Leaflet's own dragging is off (see setMode), so on a
-   touch screen one finger draws rather than panning; two fingers still pinch,
-   and the Pan tool hands the map back. */
+   The pointer is captured for the held kind, so a drag leaving the map keeps
+   reporting. While a shape tool is armed Leaflet's dragging is off (setMode),
+   so one finger draws rather than pans; two still pinch. */
 let drag = null;   // { tool, pointerId, from, points, layer, ring, closing, sticky }
 
 const MIN_DRAG_PX = 12;        // below this, a drag is an accidental click
@@ -349,8 +321,7 @@ function activeTool(ev) {
   return null;
 }
 
-// A pointer event carries viewport coordinates; Leaflet wants them measured
-// from the map's own top left corner.
+// Viewport coordinates in, Leaflet's map-relative ones out.
 function pointerLatLng(ev) {
   const box = mapEl.getBoundingClientRect();
   return map.containerPointToLatLng(
@@ -360,10 +331,9 @@ function pointerLatLng(ev) {
 mapEl.addEventListener('pointerdown', (ev) => {
   // A mouse draws with the left button; the other two are the pan grip below.
   if (ev.pointerType === 'mouse' && ev.button !== 0) return;
-  /* The shape is already following the pointer from an earlier click. This
-     press is the start of the click that ends it - but the shape is not
-     finished here, at the release below, so that pressing and dragging from
-     here still adjusts it before letting go. */
+  // Already following the pointer from an earlier click, so this press starts
+  // the click that ends it. Finished at the release, not here, so pressing and
+  // dragging from here still adjusts it first.
   if (drag && drag.sticky) {
     ev.preventDefault();
     drag.pointerId = ev.pointerId;
@@ -376,8 +346,7 @@ mapEl.addEventListener('pointerdown', (ev) => {
   if (!tool) return;
 
   ev.preventDefault();
-  // Captured, so the rest of the gesture arrives here even if it wanders off
-  // the map or ends over the tool bar.
+  // Captured, so the gesture still arrives here if it wanders off the map.
   try { mapEl.setPointerCapture(ev.pointerId); } catch (err) { /* pointer gone */ }
 
   const at = pointerLatLng(ev);
@@ -390,9 +359,8 @@ mapEl.addEventListener('pointerdown', (ev) => {
     drag.layer = L.circle(at, { radius: 1, ...DRAFT_STYLE() });
   } else {
     drag.layer = L.polyline([at], DRAFT_STYLE());
-    // A ring at the start showing where to finish. Without it the shape closes
-    // with a straight line from wherever you happened to stop, which is how a
-    // careful outline ends up with a spike across the map.
+    // A ring showing where to finish. Without it the shape closes with a
+    // straight line from wherever you stopped - a spike across the map.
     drag.ring = L.circleMarker(at, {
       radius: SNAP_PX, color: cssVar('--zone'), weight: 1.5,
       dashArray: '4,3', fillOpacity: 0.06, interactive: false,
@@ -409,8 +377,8 @@ mapEl.addEventListener('pointermove', (ev) => {
   } else if (drag.tool === 'circle') {
     drag.layer.setRadius(drag.from.distanceTo(at));
   } else {
-    // Sampled rather than recording every move: a slow hand emits hundreds of
-    // points a second, and the outline is smoothed at the end anyway.
+    // Sampled: a slow hand emits hundreds of points a second, and the outline
+    // is smoothed at the end anyway.
     const last = drag.points[drag.points.length - 1];
     if (pixelGap(last, at) >= FREEHAND_STEP_PX) drag.points.push(at);
     setClosing(withinSnap(at));
@@ -424,10 +392,8 @@ mapEl.addEventListener('pointerup', (ev) => {
   if (!drag || ev.pointerId !== drag.pointerId) return;
   if (ev.pointerType === 'mouse' && ev.button !== 0) return;
   const at = pointerLatLng(ev);
-  /* Let go without having gone anywhere, and the press was a click rather
-     than the start of a drag: hand the shape to the bare pointer instead of
-     finishing it here, where it would be too small to keep. The next click
-     lands back at the top of this handler and ends it. */
+  // Let go having gone nowhere: that was a click, not a drag. Hand the shape to
+  // the bare pointer rather than finish it here too small to keep.
   if (!drag.sticky && pixelGap(drag.from, at) < MIN_DRAG_PX) {
     drag.sticky = true;
     return;
@@ -439,10 +405,8 @@ mapEl.addEventListener('pointercancel', (ev) => {
   if (drag && ev.pointerId === drag.pointerId) finishDrag(null);
 });
 
-/* A press that lands off the map while a shape is following the pointer - on
-   the panel, on the tool bar, on the sessions - lets go of the shape. It has
-   nothing to finish it with out there, and a draft left hanging over the map
-   with no gesture attached is worse than none. */
+// A press off the map while a shape follows the pointer drops the shape: there
+// is nothing out there to finish it with.
 document.addEventListener('pointerdown', (ev) => {
   if (drag && drag.sticky && !mapEl.contains(ev.target)) finishDrag(null);
 });
@@ -472,11 +436,9 @@ function discardDraft() {
   drag = null;
 }
 
-/* The shape came out too small to be one - a click-click in the same spot, or
-   a drag that went nowhere. Nothing is drawn, and it counts as a click on the
-   map: let go of whatever the legend has pinned. The map's own click event
-   cannot do this job any more, since a shape tool takes the gesture over at
-   the press and the click that would have followed never arrives. */
+// The shape came out too small to be one, so it counts as a click on the map:
+// let go of whatever the legend has pinned. Leaflet's own click cannot do this,
+// because a shape tool takes the gesture at the press and no click follows.
 function tapped() {
   if (state.pinned !== null) pin(null);
 }
@@ -503,8 +465,8 @@ function finishDrag(latlng) {
       lat: from.lat, lon: from.lng, radius_m: from.distanceTo(latlng),
     });
   } else {
-    // Released inside the ring: close on the start point exactly, rather than
-    // on wherever the pointer drifted to inside it.
+    // Released inside the ring: close on the start point exactly, not on
+    // wherever the pointer drifted to inside it.
     const raw = closing ? points : points.concat([latlng]);
     const outline = simplifyOutline(raw);
     if (outline.length < 3) return tapped();
@@ -513,9 +475,8 @@ function finishDrag(latlng) {
 }
 
 function simplifyOutline(latlngs) {
-  // Simplified in screen pixels, which is where the wobble actually is: a 3 px
-  // tolerance drops the hand tremor and keeps every deliberate turn, at any
-  // zoom level.
+  // In screen pixels, where the wobble is: 3 px drops hand tremor and keeps
+  // every deliberate turn, at any zoom.
   const pts = latlngs.map((p) => map.latLngToContainerPoint(p));
   return L.LineUtil.simplify(pts, FREEHAND_SIMPLIFY_PX)
     .map((p) => map.containerPointToLatLng(p));
@@ -531,19 +492,15 @@ map.on('click', (ev) => {
     setMode(state.lastShape);
     return;
   }
-  // Nothing on the map catches a click, so any click here is "clicked the
-  // map": let go of whatever the legend has pinned.
+  // Nothing on the map catches clicks, so this is a click on the map itself.
   if (state.pinned !== null) pin(null);
 });
 
 /* --------------------------------------------------- temporary pan grip */
-/* Holding the middle or the right mouse button pans from wherever the pointer
-   is, whatever tool is armed, and hands that tool back on release. The Pan
-   button lights up while it lasts, so the map never changes behaviour without
-   the toolbar saying so.
-
-   Leaflet's own drag handler answers to the left button only - which the draw
-   tools need - so the panning here is done by hand. */
+/* Middle or right button pans whatever tool is armed and hands it back on
+   release, with the Pan button lit while it lasts. Done by hand because
+   Leaflet's drag handler answers to the left button only, which the draw tools
+   need. */
 const PAN_BUTTONS = new Set([1, 2]);
 let tempPan = null;
 
@@ -580,26 +537,24 @@ mapEl.addEventListener('contextmenu', (ev) => {
 });
 
 /* ------------------------------------------------------- the drawn zones */
-/* Every zone drawn is merged into the area straight away: two that overlap
-   become one shape with one outline, and one drawn over a gap between two
-   others joins all three. Zones that touch nothing stay separate regions of
-   the same area, computed as a single job. Clear starts over.
+/* Zones merge as they are drawn: overlapping ones become one outline, and one
+   drawn across a gap joins both. Zones touching nothing stay separate regions
+   of the same area, computed as one job.
 
    `state.regions` is a GeoJSON-style MultiPolygon in [lon, lat]: one entry per
-   separate region, each an outline followed by any holes. */
+   region, each an outline followed by any holes. */
 function addShape(shape) {
   const poly = [shapeRing(shape)];
   let merged;
   try {
     // Unioning a lone polygon with itself is not a no-op: it also resolves a
-    // freehand outline that crossed itself, which would otherwise be ambiguous.
+    // freehand outline that crossed itself.
     merged = state.regions.length
       ? polygonClipping.union(state.regions, poly)
       : polygonClipping.union(poly);
   } catch (err) {
-    // Boolean ops can fail on a pathological outline. An unmerged zone is a
-    // poor second best, but it is far better than losing the drag entirely,
-    // and everything downstream copes with regions that overlap.
+    // Boolean ops can fail on a pathological outline. An unmerged zone beats
+    // losing the drag, and everything downstream copes with overlap.
     console.warn('could not merge that zone, keeping it separate', err);
     merged = state.regions.concat([poly]);
   }
@@ -609,7 +564,7 @@ function addShape(shape) {
   syncZones();
 }
 
-/* Clear means start over: the zones, the route and the start pin all go. */
+// Clear means start over: zones, route and start pin all go.
 function clearZones() {
   state.regions = [];
   drawRegions();
@@ -621,22 +576,22 @@ function clearZones() {
 
 function drawRegions() {
   for (const layer of state.regionLayers) map.removeLayer(layer);
-  // Leaflet reads a polygon's rings as outline first, then holes - the same
-  // order polygon-clipping produces - so a merged hole draws as a hole.
+  // Leaflet reads rings as outline first then holes, the same order
+  // polygon-clipping produces, so a merged hole draws as a hole.
   state.regionLayers = state.regions.map((rings) =>
     L.polygon(rings.map((ring) => ring.map(([x, y]) => [y, x])), AREA_STYLE())
       .addTo(map));
 }
 
-/* A drawn shape as one closed ring of [lon, lat]. */
+// A drawn shape as one closed ring of [lon, lat].
 function shapeRing(shape) {
   let ring;
   if (shape.type === 'rect') {
     ring = [[shape.west, shape.south], [shape.east, shape.south],
             [shape.east, shape.north], [shape.west, shape.north]];
   } else if (shape.type === 'circle') {
-    // The same ellipse-in-degrees the pipeline builds for a circle, so what is
-    // merged is what the router will treat as required.
+    // The same ellipse-in-degrees the pipeline builds, so what is merged is
+    // what the router treats as required.
     const dlat = (shape.radius_m / EARTH_R) * 180 / Math.PI;
     const cosLat = Math.max(Math.cos(rad(shape.lat)), 1e-6);
     const dlon = (shape.radius_m / (EARTH_R * cosLat)) * 180 / Math.PI;
@@ -651,12 +606,11 @@ function shapeRing(shape) {
   return ring.concat([ring[0]]);    // polygon-clipping wants closed rings
 }
 
-// Matches area.js, so the circle drawn, the circle merged and the circle the
-// router covers are the same 64-sided polygon.
+// Matches area.js, so the circle drawn, merged and covered are one polygon.
 const CIRCLE_SEGMENTS = 64;
 const EARTH_R = 6_371_008.8;
 
-/* The merged area, as the pipeline's payload. */
+// The merged area, as the pipeline's payload.
 function shapePayload() {
   if (!state.regions.length) return null;
   const shapes = state.regions.map((rings) => {
@@ -680,9 +634,8 @@ function syncZones() {
     info.textContent = '--';
     return;
   }
-  // Run now rather than on the debounce: the exact geodesic figure costs a
-  // fraction of a millisecond, and a placeholder that flickers for 200 ms is
-  // worse than no placeholder at all.
+  // Now, not on the debounce: the exact figure costs a fraction of a
+  // millisecond and a placeholder flickering for 200 ms is worse than none.
   runCheck();
 }
 
@@ -735,14 +688,10 @@ function setMode(mode) {
   const drawing = SHAPES.includes(mode);
   mapEl.classList.toggle('drawing', drawing);
   mapEl.classList.toggle('pinning', mode === 'pin');
-  /* A shape tool owns the drag gesture, so Leaflet must not pan with it as
-     well. This is what lets one finger draw on a touch screen.
-
-     The start pin owns it just as much: with Start armed a press means "put it
-     here", and leaving Leaflet's drag handler live meant an unsteady hand
-     panned the map out from under the click instead of dropping the pin. The
-     held middle or right button still pans in every mode, and the wheel still
-     zooms, so nothing is actually trapped. */
+  // A shape tool owns the drag, which is what lets one finger draw on a touch
+  // screen. So does the start pin: with Leaflet's handler live, an unsteady
+  // hand panned the map out from under the click instead of dropping the pin.
+  // The middle and right buttons still pan and the wheel still zooms.
   const ownsDrag = drawing || mode === 'pin';
   if (ownsDrag) map.dragging.disable(); else map.dragging.enable();
 }
@@ -755,9 +704,8 @@ setMode('rect');
 $('clear-zones').onclick = () => clearZones();
 
 /* ----------------------------------------------------------- place search */
-/* Nominatim is OpenStreetMap's own geocoder: free, no key, and asked for once
-   per submit rather than on every keystroke - which is both what its usage
-   policy expects and what "type, then press Enter" already implies. */
+// OpenStreetMap's own geocoder: free, no key, asked once per submit rather than
+// per keystroke, which is what its usage policy expects.
 const NOMINATIM = 'https://nominatim.openstreetmap.org/search';
 
 $('search').addEventListener('submit', async (ev) => {
@@ -782,8 +730,8 @@ $('search').addEventListener('submit', async (ev) => {
     const hit = hits[0];
     const box = hit.boundingbox;    // [south, north, west, east], as strings
     if (box && box.length === 4) {
-      // Zoom capped: the box around a single address is metres wide, and
-      // flying to zoom 19 for it loses all sense of where you are.
+      // Capped: the box around a single address is metres wide, and zoom 19
+      // loses all sense of where you are.
       map.fitBounds([[+box[0], +box[2]], [+box[1], +box[3]]],
         { padding: [24, 24], maxZoom: 16 });
     } else {
@@ -833,8 +781,7 @@ const NO_SPLIT_HOURS = 24;   // one session: a session is capped at 24 h
 function sessionHours() {
   // Splitting off means one session covering the whole route.
   if (!sessionEnabled()) return NO_SPLIT_HOURS;
-  // A positive decimal number of hours: "1.5", "0.75", "2". Comma accepted too,
-  // since a decimal comma is the norm across much of Europe.
+  // Decimal hours. Comma accepted: it is the norm across much of Europe.
   const raw = $('session').value.trim().replace(',', '.');
   if (!/^\d*\.?\d+$/.test(raw)) return null;
   const h = parseFloat(raw);
@@ -873,8 +820,7 @@ function scheduleCheck() {
   state.checkTimer = setTimeout(runCheck, 200);
 }
 
-/* Settings and zones checked together, and the exact geodesic area of the
-   merged shape worked out while we are here. */
+// Settings and zones together, with the merged shape's exact geodesic area.
 function runCheck() {
   if (!state.regions.length) return;
 
@@ -909,12 +855,9 @@ function runCheck() {
 });
 
 /* --------------------------------------------------------------- compute */
-/* The pipeline runs in a worker so the page stays responsive while it works.
-
-   The version in the URL is not decoration. Browsers cache a module worker's
-   script graph hard - Firefox keeps serving the old one through an ordinary
-   reload - so without it a changed pipeline can go on running the previous
-   code, which looks exactly like a bug in the new code. */
+// In a worker, so the page stays responsive. The version in the URL is load
+// bearing: browsers cache a module worker's script graph hard, and Firefox will
+// keep running the old pipeline through an ordinary reload without it.
 const worker = new Worker(
   new URL(`./worker.js?v=${config.ALGO_VERSION}`, import.meta.url),
   { type: 'module' },
@@ -982,8 +925,7 @@ function renderProgress() {
   const box = $('progress');
   box.classList.remove('hidden');
   const fill = box.querySelector('.fill');
-  // Downloading and route-solving have no natural granularity, so they get a
-  // moving bar rather than a fake percentage.
+  // No natural granularity for these two, so a moving bar rather than a lie.
   const indeterminate = p.phase === 'balance' || p.phase === 'fetch';
   fill.classList.toggle('indeterminate', indeterminate);
   fill.style.width = indeterminate ? '' : `${Math.round((p.fraction || 0) * 100)}%`;
@@ -1002,18 +944,13 @@ function showError(msg) {
 }
 
 /* ------------------------------------------------------ save and reload */
-/* What goes in the zip's metadata.json, and what comes back out of it.
+/* What goes in the zip's metadata.json. Three blocks, one per restore step:
+   drawn geometry, form, computed route. Kept apart from the worker's request
+   payload, which is shaped for the solver - reversing those conversions on the
+   way back in is a second chance to get them wrong.
 
-   Three blocks, one per restore step: the drawn geometry, the form, and the
-   computed route. Kept apart rather than folded into the request payload the
-   worker takes, because that payload is shaped for the solver - the shape
-   converted, the hours turned into minutes - and reversing those conversions
-   on the way back in is a second chance to get them wrong. These are the
-   values the page itself holds.
-
-   `format` is checked on load and refused if unknown. Without it, a later
-   change to any of this would half-load into a page that looks right and
-   is not. */
+   `format` is checked on load and refused if unknown, so a later change cannot
+   half-load into a page that looks right and is not. */
 const METADATA_FORMAT = 1;
 
 function routeMetadata(res) {
@@ -1021,9 +958,8 @@ function routeMetadata(res) {
     format: METADATA_FORMAT,
     generator: 'Routile',
     saved: new Date().toISOString(),
-    // Not enforced on load - a route computed by an older algorithm still
-    // draws exactly as it drew then. Recorded so a puzzling old file can be
-    // placed.
+    // Not enforced on load - an old route still draws as it drew then.
+    // Recorded so a puzzling old file can be placed.
     algoVersion: config.ALGO_VERSION,
     view: {
       regions: state.regions,
@@ -1042,10 +978,9 @@ function routeMetadata(res) {
   };
 }
 
-/* Enough of a check that a wrong or damaged file is refused with a sentence
-   rather than half-applied. Not a schema: this reads files this page wrote,
-   so the job is catching the honest mistakes - the wrong zip, a truncated
-   download, a hand-edited number - not defending against a hostile one. */
+// Enough that a wrong or damaged file is refused with a sentence rather than
+// half-applied. Not a schema: this reads files this page wrote, so it catches
+// honest mistakes, not hostile ones.
 function checkMetadata(meta) {
   if (!meta || typeof meta !== 'object') throw new Error('metadata.json is not readable.');
   if (meta.format !== METADATA_FORMAT) {
@@ -1079,8 +1014,8 @@ function restoreRoute(meta) {
 
   $(form.bothDirections ? 'dir-both' : 'dir-oneway').checked = true;
   $('private-roads').checked = !!form.includePrivate;
-  // Clamped rather than trusted: a hand-edited file should not put the form
-  // into a state its own validation would reject.
+  // Clamped: a hand-edited file must not put the form into a state its own
+  // validation would reject.
   $('passes').value = String(
     Math.min(Math.max(Math.round(form.passes) || 1, 1), config.PASSES_MAX));
   $('session-enabled').checked = !!form.splitSessions;
@@ -1098,8 +1033,7 @@ function restoreRoute(meta) {
   hideMapAlert();
 }
 
-/* The zip this page downloads, read back in. JSZip is already loaded for the
-   writing half, and it reads as happily as it writes. */
+// The zip this page downloads, read back in.
 async function loadRouteZip(file) {
   if (!/\.zip$/i.test(file.name)) {
     throw new Error(/\.gpx$/i.test(file.name)
@@ -1129,8 +1063,7 @@ const dropzone = $('dropzone');
 async function acceptFiles(files) {
   const list = [...(files || [])];
   if (!list.length) return;
-  // One route per zip, so a multiple selection takes the first zip in it
-  // rather than refusing outright.
+  // One route per zip, so a multiple selection takes the first zip in it.
   const file = list.find((f) => /\.zip$/i.test(f.name)) || list[0];
   dropzone.classList.add('busy');
   try {
@@ -1142,9 +1075,8 @@ async function acceptFiles(files) {
   }
 }
 
-/* Refusing a file is the one failure worth interrupting for: you dropped
-   something and nothing happened, and a line at the foot of the panel is easy
-   to miss when you are looking at the map. It stays until dismissed. */
+// Refusing a file is worth interrupting for: you dropped something and nothing
+// happened, and a line at the foot of the panel is easy to miss.
 function showMapAlert(msg) {
   $('map-alert-text').textContent = msg;
   $('map-alert').classList.remove('hidden');
@@ -1186,8 +1118,8 @@ dropzone.addEventListener('drop', (ev) => {
   acceptFiles(ev.dataTransfer.files);
 });
 
-/* A file dropped anywhere else would otherwise be opened by the browser,
-   navigating away from a page that may have a route in it. */
+// A file dropped elsewhere would be opened by the browser, navigating away from
+// a page that may have a route in it.
 for (const type of ['dragover', 'drop']) {
   window.addEventListener(type, (ev) => {
     if (!dropzone.contains(ev.target)) ev.preventDefault();
@@ -1215,9 +1147,8 @@ function renderResult(res) {
     + `<span class="tile-value">${escapeHtml(String(value))}</span></div>`
   ).join('');
 
-  // One button, one zip: the GPX file(s) - one per session, because one
-  // 80,000-point track is more than most nav apps will take - plus
-  // metadata.json, so a single session gets the same package.
+  // One button, one zip. GPX one per session, because an 80,000-point track is
+  // more than most nav apps take, plus metadata.json either way.
   const many = sessions.length > 1;
   $('download').textContent = many
     ? `Download ${sessions.length} sessions (.zip)`
@@ -1236,8 +1167,7 @@ $('download').onclick = async () => {
   button.disabled = true;
   button.textContent = 'Preparing...';
   try {
-    // One moment for the whole package: the zip, the GPX files inside it and
-    // the `saved` in metadata.json all say the same thing.
+    // One moment for the whole package: zip name, GPX names and `saved` agree.
     const meta = routeMetadata(res);
     const stamp = fileStamp(new Date(meta.saved));
     const blob = await gpxZip(res, { metadata: meta, stamp });
@@ -1263,10 +1193,9 @@ function saveBlob(blob, filename) {
 }
 
 /* ----------------------------------------------------------------- route */
-/* The breadcrumb is one continuous list of points; `arc_start` maps a tour arc
-   to where it begins in that list, and each session knows the arcs it covers.
-   Slicing there rather than by distance keeps every session's line joined to
-   the next one exactly, with no gap and no overlap. */
+// `arc_start` maps a tour arc to where it begins in the breadcrumb, and each
+// session knows its arcs. Slicing there rather than by distance keeps every
+// session's line joined to the next exactly.
 function sessionSlice(res, track, session) {
   const starts = res.arc_start || [];
   if (!starts.length || !session.arc_span) return null;
@@ -1276,18 +1205,13 @@ function sessionSlice(res, track, session) {
   return to > from ? track.slice(from, to + 1) : null;
 }
 
-/* Shift every point sideways, to the right of the direction of travel, the way
-   a map draws a dual carriageway.
+/* Shift every point right of the direction of travel, the way a map draws a
+   dual carriageway. Without it a street driven both ways is two lines on top of
+   each other, indistinguishable from one driven once. Falls out of the
+   geometry, so it needs no extra data and works for three passes as for two.
 
-   Without this a street driven in both directions is two lines on top of each
-   other, i.e. indistinguishable from a street driven once - so "did it cover
-   both ways?" is a question the map cannot answer. Offsetting makes the second
-   pass appear beside the first, with its own arrows pointing back. It falls out
-   of the geometry, so it needs no extra data and works for three passes as
-   readily as two.
-
-   The offset is a fixed distance on the ground, not in pixels, so it stays a
-   real half-carriageway: invisible when zoomed out, clear when zoomed in. */
+   A fixed distance on the ground, not in pixels, so it stays a real
+   half-carriageway: invisible zoomed out, clear zoomed in. */
 function offsetRight(points, metres) {
   const out = new Array(points.length);
   for (let i = 0; i < points.length; i++) {
@@ -1331,10 +1255,9 @@ function drawSessions(res, track) {
     const raw = sessionSlice(res, track, session) || [];
     if (raw.length < 2) return;
     const points = offsetRight(raw, OFFSET_M);
-    // interactive:false: a route line is drawn output, not a control. The
-    // legend is where a session is hovered and picked - a line under the
-    // pointer must not take the pointer cursor, catch a click meant for the
-    // map, or swap the highlight while you are drawing the next zone over it.
+    // interactive:false: a route line is drawn output, not a control. Sessions
+    // are hovered and picked in the legend, so a line under the pointer must
+    // not catch a click meant for the map.
     const line = L.polyline(points, {
       color: sessionColor(i), weight: ROUTE_WEIGHT, opacity: 0.85,
       interactive: false,
@@ -1361,14 +1284,10 @@ function drawSessions(res, track) {
   }
 }
 
-/* Every arrow a session will ever need, worked out once when its line is
-   drawn: one every ARROW_SPACING_M along the leg, with the heading to draw it
-   at. Which of them are on screen is then a bounds test each.
-
-   This used to be done per pan, walking every point of the route to re-measure
-   the spacing - which on a 400 km route is hundreds of thousands of distance
-   calculations before a single mark reaches the screen, on every gesture. The
-   spacing does not depend on the viewport, so it never needed redoing. */
+// Every arrow a session needs, worked out once when its line is drawn: one per
+// ARROW_SPACING_M with its heading, after which "on screen?" is a bounds test.
+// Spacing does not depend on the viewport, so redoing it per pan - hundreds of
+// thousands of distance calculations on a 400 km route - was wasted.
 function arrowsAlong(points) {
   const out = [];
   let since = ARROW_SPACING_M;      // so the first one lands at the very start
@@ -1405,32 +1324,20 @@ function buildLegend(sessions) {
   }
 }
 
-/* The top bar floats centred over the map with the session list in the corner
-   beside it, and gives way in three steps as the window narrows: the tools
-   drop their labels, then the bar gives up the centre and slides left to use
-   the empty half of the map, and finally the whole page changes shape - the
-   panel stacks above the map instead of beside it, which hands the map the
-   panel's 388px and is nearly always more than the bar was short by.
+/* The top bar floats centred over the map with the session list beside it, and
+   gives way in three cumulative steps as the window narrows: tools drop their
+   labels, the bar slides left out of the centre, then the panel stacks above
+   the map and hands it 388px. Nothing ever leaves the map.
 
-   Nothing ever leaves the map. The bar and the sessions float over it at every
-   size, the way they do in a phone map app.
-
-   Measured rather than guessed from a breakpoint, because how much room the
-   bar needs depends on its labels and how much is left depends on whether
-   there are any sessions to list at all. Each step is decided by trying it:
-   the classes come off, the bar is measured at its natural width (see the
-   max-content in the stylesheet), and the next step is added only while it
+   Measured, not guessed from a breakpoint: room needed depends on the labels,
+   room available on whether there are sessions to list. Each step strips the
+   classes, measures the bar at its natural width, and re-adds only while it
    still does not fit.
 
-   The steps are cumulative, and deliberately so: a narrower window can only
-   ever take more away, never hand the labels back. Reaching one step at a
-   width and undoing it at a narrower one would have the bar flickering as the
-   window is dragged.
-
-   The stacking decision is measured against the *unstacked* width, because
-   the classes are stripped before measuring - so it asks "would this fit if
-   the panel were beside the map?" and never against the width its own answer
-   produced. That is what keeps it from oscillating. */
+   Cumulative on purpose - a narrower window can only take more away. Undoing a
+   step at a narrower width would flicker as the window is dragged. And stacking
+   is judged against the *unstacked* width, so it never measures against the
+   width its own answer produced. */
 const phoneLayout = window.matchMedia('(max-width: 860px)');
 phoneLayout.addEventListener('change', () => layoutOverlays());
 
@@ -1441,8 +1348,7 @@ function layoutOverlays() {
   root.classList.remove('app-stacked');
   putFinderInBar();
 
-  // Below the breakpoint the stacked shape is simply the right one, whatever
-  // the bar would or would not fit into.
+  // Below the breakpoint the stacked shape is right whatever the bar fits into.
   if (phoneLayout.matches) {
     stage.classList.add('tools-tight', 'tools-left');
     root.classList.add('app-stacked');
@@ -1452,37 +1358,34 @@ function layoutOverlays() {
     if (barIsCrowded()) root.classList.add('app-stacked');
   }
 
-  /* Last resort, and only ever reachable once stacked: the bar is clamped to
-     the stage by then, so anything still not fitting overflows rather than
-     shrinking - the search box has a floor and will not give up any more
-     width. The picker and the search step out above the map, where the field
-     has the width to itself, and the tools keep the floating bar. */
+  // Last resort, reachable only once stacked: the bar is clamped to the stage
+  // by then and the search box has a width floor, so anything left overflows.
+  // Picker and search step out above the map; the tools keep the floating bar.
   if (barOverflows()) {
     stage.classList.add('find-above');
     stage.insertBefore($('findbar'), $('map'));
-    // The floating bar and the sessions are positioned against the stage, and
-    // the stage now opens with the strip; this is what they clear it by.
+    // What the bar and the sessions, positioned against the stage, clear it by.
     stage.style.setProperty('--find-strip', `${$('findbar').offsetHeight}px`);
   }
 }
 
-/* The finder's home is the tail of the floating bar. Put back before every
-   measurement, so what is measured is always the bar entire. */
+// The finder's home is the tail of the floating bar. Put back before every
+// measurement, so what is measured is always the whole bar.
 function putFinderInBar() {
   const bar = $('topbar');
   if ($('findbar').parentElement !== bar) bar.appendChild($('findbar'));
   $('stage').style.removeProperty('--find-strip');
 }
 
-/* True only of a bar that has been clamped and still wants more room. A
-   floating bar is sized to its own content and cannot overflow itself. */
+// True only of a clamped bar that still wants room: a floating one is sized to
+// its content and cannot overflow itself.
 function barOverflows() {
   const bar = $('topbar');
   return bar.scrollWidth > bar.clientWidth + 1;
 }
 
-/* Does the bar, at the width and place it currently has, still clear both
-   edges of the stage and the session list on its right? */
+// Does the bar, where it currently sits, clear both stage edges and the
+// session list on its right?
 function barIsCrowded() {
   const stage = $('stage').getBoundingClientRect();
   const bar = $('topbar').getBoundingClientRect();
@@ -1493,12 +1396,9 @@ function barIsCrowded() {
   return bar.right + clear > legend.getBoundingClientRect().left;
 }
 
-/* Two layers of the same highlight, both driven from the legend alone.
-   Hovering a row previews that session; clicking it pins it so it survives the
-   pointer leaving the legend, which is what you want while reading a leg off
-   the map. Clicking the row again, or clicking the map, lets go. With
-   something pinned, moving off a hover falls back to it rather than to
-   nothing. */
+// Two layers of one highlight, both driven from the legend. Hover previews a
+// session; a click pins it so it survives the pointer leaving the legend.
+// Clicking again, or clicking the map, lets go; a hover falls back to the pin.
 function hover(index, { scroll = true } = {}) {
   state.hovered = index;
   applyHighlight(index !== null ? index : state.pinned, { scroll });
@@ -1512,8 +1412,8 @@ function pin(index) {
   }
 }
 
-/* Highlighting a session leaves it exactly as drawn and takes every other
-   session off the map, so what is left is that one leg on its own. */
+// Highlighting leaves a session exactly as drawn and takes the others off the
+// map, so what is left is that one leg on its own.
 function applyHighlight(index, { scroll = true } = {}) {
   state.routeLayers.forEach((line, i) => {
     if (!line) return;
@@ -1527,8 +1427,7 @@ function applyHighlight(index, { scroll = true } = {}) {
   for (const item of $('legend').querySelectorAll('.legend-item')) {
     const hot = Number(item.dataset.session) === index;
     item.classList.toggle('active', hot);
-    // Keep the matching row visible when the pointer is out on the map and the
-    // legend has scrolled past it.
+    // Keep the row visible when the legend has scrolled past it.
     if (hot && scroll) item.scrollIntoView({ block: 'nearest' });
   }
 }

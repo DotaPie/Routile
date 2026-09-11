@@ -1,12 +1,11 @@
 /* Split the waypoint list into drivable sessions.
 
-   Waypoints are first grouped into short chunks - a few waypoints, a few
-   minutes of driving - and sessions are cut at chunk boundaries. Consecutive
-   chunks overlap: one chunk's last waypoint is the next one's first, so the
-   sessions join up exactly with no gap and no teleport. */
+   Waypoints group into short chunks and sessions are cut at chunk boundaries.
+   Consecutive chunks overlap - one chunk's last waypoint is the next one's
+   first - so sessions join up with no gap and no teleport. */
 
-/* Chunks as {i, j}: indices of the first and last waypoint. A chunk is capped
-   both by waypoint count and by drive time. */
+// Chunks as {i, j}: first and last waypoint index. Capped by waypoint count
+// and by drive time.
 export function chunkWaypoints(wps, perChunk, maxSeconds) {
   const chunks = [];
   if (wps.length < 2) return chunks;
@@ -14,8 +13,7 @@ export function chunkWaypoints(wps, perChunk, maxSeconds) {
   let i = 0;
   while (i < last) {
     let j = Math.min(i + perChunk + 1, last);
-    // Trim for the time budget, but never below a single hop or the chunker
-    // would stop making progress.
+    // Never below a single hop, or the chunker stops making progress.
     while (j > i + 1 && wps[j].cumSeconds - wps[i].cumSeconds > maxSeconds) j--;
     chunks.push({ i, j });
     i = j;
@@ -23,10 +21,9 @@ export function chunkWaypoints(wps, perChunk, maxSeconds) {
   return chunks;
 }
 
-/* Assert the chunking covers the tour with no gaps and no empty chunks. A
-   chunk spanning zero tour arcs was a real bug once: the closing waypoint
-   shared an arc index with the last real one, giving a 0 km leg and an empty
-   GPX segment. */
+// Assert the chunking covers the tour with no gaps and no empty chunks. A
+// chunk spanning zero arcs was a real bug: the closing waypoint shared an arc
+// index with the last real one, giving a 0 km leg and an empty GPX segment.
 export function verifyChunks(chunks, wps) {
   if (!chunks.length) {
     if (wps.length >= 2) throw new Error('waypoints present but no chunks produced');
@@ -42,9 +39,8 @@ export function verifyChunks(chunks, wps) {
   }
 }
 
-/* Batch chunks into sessions of roughly `sessionSeconds` driving. A single
-   chunk longer than the budget still gets its own session rather than being
-   dropped or split - it is already as small as the waypoints allow. */
+// Batch chunks into sessions of roughly `sessionSeconds`. A chunk longer than
+// the budget gets its own session: it is already as small as waypoints allow.
 export function groupSessions(chunks, wps, sessionSeconds) {
   if (sessionSeconds <= 0) throw new Error('session length must be positive');
   const seconds = (c) => Math.max(wps[c.j].cumSeconds - wps[c.i].cumSeconds, 0);
