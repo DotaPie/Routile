@@ -69,26 +69,26 @@
         </div>
       </div>
 
+      <label class="field">
+        <span>Passes per street</span>
+        <input type="number" id="passes" value="1" min="1" step="1" inputmode="numeric">
+      </label>
+
+      <!-- A dotted rule under a label means there is a note behind it; see
+           .info and showTip(). -->
+      <label class="field">
+        <span><button type="button" class="info"
+              data-tip="Dead ends shorter than this are left out of the route."
+              >Shortest dead end (m)</button></span>
+        <input type="number" id="dead-end" value="20" min="0" step="1" inputmode="numeric">
+      </label>
+
       <!-- Admits highway=service and anything tagged access=private. Named for
            the service roads: they are the bulk of what it brings in. -->
       <label class="switch">
         <input type="checkbox" id="private-roads">
         <span class="track" aria-hidden="true"></span>
         <span class="switch-label">Include service roads</span>
-      </label>
-
-      <label class="field">
-        <span>Passes per street</span>
-        <input type="number" id="passes" value="1" min="1" step="1" inputmode="numeric">
-      </label>
-
-      <label class="field">
-        <span>Shortest dead end (m)<button type="button" class="info"
-              aria-label="What this setting does"
-              data-tip="A dead end shorter than this is left out of the route: you would drive in, see all of it, and reverse straight back out. Set it to 0 to drive every last stub.">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11.2v5.4"/><circle cx="12" cy="7.6" r="1.15" fill="currentColor" stroke="none"/></svg>
-        </button></span>
-        <input type="number" id="dead-end" value="20" min="0" step="1" inputmode="numeric">
       </label>
 
       <label class="switch">
@@ -98,11 +98,9 @@
       </label>
 
       <label class="field hidden" id="session-field">
-        <span>Session length (hours)<button type="button" class="info"
-              aria-label="What this estimate means"
-              data-tip="Sessions are cut using the same speed-limit estimate as the driving time, so two hours here means two hours of driving at the limit. Allow more than that on the road.">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11.2v5.4"/><circle cx="12" cy="7.6" r="1.15" fill="currentColor" stroke="none"/></svg>
-        </button></span>
+        <span><button type="button" class="info"
+              data-tip="Estimated from speed limits, so a real session runs longer."
+              >Session length (hours)</button></span>
         <input type="text" id="session" value="2" inputmode="decimal"
                placeholder="2" autocomplete="off">
       </label>
@@ -171,16 +169,13 @@
 
         <span class="tool-sep" aria-hidden="true"></span>
 
-        <!-- A folded map with a pin standing on it: this view, handed to Google
-             Maps at the same place and zoom. The map's top right corner stops
-             short, so the pin reads as sitting in front of it. -->
+        <!-- A paper map, folded in three: this view, handed to Google Maps at
+             the same place and zoom. -->
         <button id="open-gmaps" class="tool" type="button"
                 aria-label="Open this view in Google Maps">
           <svg viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M9 6 3.5 9.5v10L9 16l5 3.5 5.5-3.5v-3"/>
-            <path d="M9 6v10M14 19.5V13"/>
-            <path d="M16.8 13.2c0 0 3.7-3.6 3.7-6.4a3.7 3.7 0 0 0-7.4 0c0 2.8 3.7 6.4 3.7 6.4z"/>
-            <circle cx="16.8" cy="6.7" r="1.3" fill="currentColor" stroke="none"/>
+            <path d="M9 3.6 3.2 6.2v14.4L9 18l6 2.4 5.8-2.6V3.4L15 6 9 3.6z"/>
+            <path d="M9 3.6V18M15 6v14.4"/>
           </svg>
           <span>Google</span>
         </button>
@@ -202,8 +197,11 @@
           <button id="basemap-button" class="basemap-button" type="button"
                   aria-haspopup="listbox" aria-expanded="false"
                   aria-label="Choose the basemap">
+            <!-- A stack, not a folded map: the Google button next door is the
+                 map, and this picks which one is under the route. -->
             <svg class="basemap-icon" viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M9 4.5 3.5 7v12.5L9 17l6 2.5 5.5-2.5V4.5L15 7 9 4.5zM9 4.5V17M15 7v12.5"/>
+              <path d="M12 3.2 3.2 7.6 12 12l8.8-4.4L12 3.2z"/>
+              <path d="M3.2 12 12 16.4l8.8-4.4M3.2 16.4 12 20.8l8.8-4.4"/>
             </svg>
             <span id="basemap-label"></span>
             <svg class="basemap-chevron" viewBox="0 0 24 24" aria-hidden="true">

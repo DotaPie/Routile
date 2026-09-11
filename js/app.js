@@ -1120,7 +1120,10 @@ let tipFor = null;
 
 function showTip(marker) {
   if (tipFor === marker) return;      // moving within the marker, not onto it
+  hideTip();
   tipFor = marker;
+  // The bubble is the label's description only while it is the one showing.
+  marker.setAttribute('aria-describedby', 'tip');
   tipBubble.textContent = marker.dataset.tip || '';
   tipBubble.classList.remove('hidden');
   const at = marker.getBoundingClientRect();
@@ -1138,6 +1141,7 @@ function showTip(marker) {
 }
 
 function hideTip() {
+  if (tipFor) tipFor.removeAttribute('aria-describedby');
   tipFor = null;
   tipBubble.classList.add('hidden');
 }
@@ -1166,9 +1170,12 @@ document.addEventListener('focusin', (ev) => {
 document.addEventListener('focusout', (ev) => {
   if (leaving(ev)) hideTip();
 });
-// A marker inside a <label> would otherwise hand the click to the input.
+/* A touch screen has no hover, so the tap itself shows the note and the next
+   tap anywhere dismisses it. The click is left alone: these labels sit inside
+   their <label>, and clicking one should still put the cursor in the field. */
 document.addEventListener('click', (ev) => {
-  if (markerAt(ev.target)) ev.preventDefault();
+  const marker = markerAt(ev.target);
+  if (marker) showTip(marker); else hideTip();
 });
 // The bubble is fixed, so anything that moves the page leaves it behind.
 window.addEventListener('scroll', hideTip, true);
@@ -1211,18 +1218,11 @@ for (const type of ['dragover', 'drop']) {
 }
 
 /* ---------------------------------------------------------------- render */
-const DRIVING_TIP =
-  "Worked out from the speed limits in OpenStreetMap, counting no time for "
-  + 'turning round, junctions or stops. The real drive takes longer, by how '
-  + 'much depends on the area.';
+const DRIVING_TIP = 'Estimated from speed limits; the real drive takes longer.';
 
-// The same marker index.html writes by hand, for the tiles built here.
-const infoMarker = (tip) =>
-  `<button type="button" class="info" aria-label="What this estimate means"`
-  + ` data-tip="${escapeHtml(tip)}">`
-  + '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/>'
-  + '<path d="M12 11.2v5.4"/>'
-  + '<circle cx="12" cy="7.6" r="1.15" fill="currentColor" stroke="none"/></svg></button>';
+// The same dotted-rule label index.html writes by hand, for the tiles built here.
+const infoLabel = (text, tip) =>
+  `<button type="button" class="info" data-tip="${escapeHtml(tip)}">${text}</button>`;
 
 function renderResult(res) {
   $('stats-card').classList.remove('hidden');
@@ -1240,7 +1240,7 @@ function renderResult(res) {
     ['Unreachable', `${cov.km_dropped_not_strongly_connected} km`],
     ['Fragments', Math.max(cov.strong_components - 1, 0)],
   ].map(([label, value, tip]) =>
-    `<div class="tile"><span class="tile-label">${label}${tip ? infoMarker(tip) : ''}</span>`
+    `<div class="tile"><span class="tile-label">${tip ? infoLabel(label, tip) : label}</span>`
     + `<span class="tile-value">${escapeHtml(String(value))}</span></div>`
   ).join('');
 
