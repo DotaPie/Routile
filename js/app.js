@@ -704,8 +704,12 @@ const TOOL_BUTTONS = {
 function setMode(mode) {
   state.mode = mode;
   if (SHAPES.includes(mode)) state.lastShape = mode;
+  // Buttons rather than radios, so the drawing group can show nothing lit while
+  // the start pin is armed. aria-pressed says the same thing out loud.
   for (const [key, id] of Object.entries(TOOL_BUTTONS)) {
-    $(id).classList.toggle('active', mode === key);
+    const on = mode === key;
+    $(id).classList.toggle('active', on);
+    $(id).setAttribute('aria-pressed', String(on));
   }
   const drawing = SHAPES.includes(mode);
   mapEl.classList.toggle('drawing', drawing);

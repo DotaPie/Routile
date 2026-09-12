@@ -487,25 +487,32 @@ html, body {
 .segmented label:has(input:disabled) { cursor: default; }
 .segmented label:hover input:disabled + span { color: var(--ink-2); }
 
-/* The one segmented control that lives in the tool bar rather than the panel:
-   same shape, sized and lettered like the buttons beside it, and columns that
-   fit their words instead of splitting the row in half. Subtract wears the red
-   its drafts are drawn in. */
+/* The two one-of-N groups in the tool bar: which tool, and what that tool does.
+   Both sit in a recessed track rather than floating loose like Start and Clear,
+   because in each of them exactly one answer is live at a time. Sized to the
+   loose buttons, so the row of them keeps one height. */
+.tool-group, .bar-seg {
+  align-self: center;
+  padding: 2px;
+  background: var(--field-bg); border-radius: var(--r-sm);
+}
+.tool-group { display: flex; gap: 2px; }
+.tool-group .tool { padding: 5px 10px; border-radius: 6px; }
+
 .bar-seg {
-  align-self: center; margin-right: 3px;
-  grid-template-columns: auto auto; gap: 2px; padding: 2px;
-  background: var(--field-bg);
+  margin-left: 4px;
+  grid-template-columns: auto auto; gap: 2px;
 }
 .bar-seg span {
   display: flex; align-items: center; gap: 6px;
-  padding: 5px 9px;
+  padding: 5px 10px;
   font-size: 13px; font-weight: 520;
   border-radius: 6px;
 }
 .bar-seg b { font-weight: inherit; }
 .bar-seg svg {
-  width: 15px; height: 15px; flex: 0 0 auto;
-  fill: none; stroke: currentColor; stroke-width: 2;
+  width: 17px; height: 17px; flex: 0 0 auto;
+  fill: none; stroke: currentColor; stroke-width: 1.9;
   stroke-linecap: round; stroke-linejoin: round;
 }
 #op-subtract:checked + span { background: var(--bad); color: var(--on-bad); }
@@ -695,9 +702,11 @@ html, body {
 #stage.tools-tight .tool span { display: none; }
 #stage.tools-tight .tool { padding: 8px 10px; }
 #stage.tools-tight .tool-sep { margin: 3px 0; }
-/* The plus and the minus carry it once the words go. */
+/* The plus and the minus carry it once the words go. Both tracks lose the same
+   2px a side, so the bar still reads as one height. */
 #stage.tools-tight .bar-seg b { display: none; }
-#stage.tools-tight .bar-seg span { padding: 6px 8px; }
+#stage.tools-tight .bar-seg span,
+#stage.tools-tight .tool-group .tool { padding: 6px 8px; }
 
 /* Then the bar gives up the centre: the sessions are in the right corner, so
    the room left is all on the left. */
