@@ -849,7 +849,7 @@ $('search-input').addEventListener('input', () => {
 
 /* ---------------------------------------------------------------- config */
 // Stated in config.js, printed here, and recorded in every metadata.json.
-$('repo-version').textContent = `v${config.VERSION}`;
+$('repo-version').textContent = config.VERSION;
 
 $('passes').max = String(config.PASSES_MAX);
 $('private-roads').checked = config.INCLUDE_PRIVATE_DEFAULT;
