@@ -1,0 +1,922 @@
+/* One theme for the UI: dark, whichever basemap is under it. Every colour is a
+   variable, so a light UI would be a matter of redefining these. A light panel
+   was dropped because the brand green washes out on white; the map is the one
+   part that goes light, with its own variables below. */
+:root {
+  color-scheme: dark;
+  --bg: #0f1316;
+  --panel: #171c21;
+  --panel-2: #1d242a;
+  --ink: #e8eef2;
+  --ink-2: #a7b4bd;
+  --ink-3: #78868f;
+  --line: #262e35;
+  --line-2: #333d45;
+  --hover: #232b32;
+  --field-bg: #11161a;
+  --accent: #35d29a;
+  --accent-2: #46e0aa;
+  --accent-soft: #14312a;
+  --accent-line: #1e4a3d;
+  --on-accent: #06120e;
+  --focus: rgba(53, 210, 154, 0.26);
+  --good: #35d29a;
+  --warn: #f0c14b;
+  --warn-2: #ffd977;
+  --bad: #ff7368;
+  --bad-soft: #2c1917;
+  --bad-line: #4d2724;
+  --on-bad: #2a0d09;
+  --glass: rgba(23, 28, 33, 0.93);
+  --r: 10px;
+  --r-sm: 7px;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.35), 0 4px 12px rgba(0, 0, 0, 0.30);
+  --shadow-lg: 0 2px 6px rgba(0, 0, 0, 0.42), 0 12px 28px rgba(0, 0, 0, 0.38);
+}
+
+/* The map's own colours, apart from the panel's because they answer to the
+   basemap. --map-bg is behind the tiles and doubles as the halo around arrows
+   and dots; --map-ink fills those dots. The zone green goes deeper on the light
+   map. The dark set sits on bare :root, so the map is dressed before any script
+   runs and cannot flash unstyled. */
+/* --drive-* are the street editor's three answers, and they are the whole point
+   of its view: what you have changed is read off the map rather than counted up.
+   Green is "untouched", so a first draw is entirely green and the few streets
+   that have been edited are the only marks on it. Nothing else takes a colour
+   there: the street under the pointer and the one being edited are drawn
+   heavier in their own, so no fourth hue competes with the three. */
+:root {
+  --map-bg: #0b0f12;
+  --map-ink: #e8eef2;
+  --zone: #35d29a;
+  --cut: #ff7368;
+  --pin-ring: #0b1a15;
+  --drive-cover: #4ade80;
+  --drive-access: #fbbf24;
+  --drive-never: #f87171;
+  /* Readable on whichever of the three is filled in behind it. The light map's
+     street colours are dark inks, the dark map's are bright, so this flips -
+     except amber, which is a light colour on both maps and takes dark ink on
+     both. */
+  --on-drive: #06120e;
+  --on-drive-access: #2a1d02;
+}
+:root[data-map="light"] {
+  --map-bg: #f4f6f8;
+  --map-ink: #10151c;
+  --zone: #0b8f68;
+  --cut: #d8352a;
+  --pin-ring: #ffffff;
+  --drive-cover: #15803d;
+  --drive-access: #d4a600;
+  --drive-never: #dc2626;
+  --on-drive: #ffffff;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  font: 14px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  color: var(--ink);
+  background: var(--bg);
+}
+
+#shell { display: flex; height: 100%; }
+
+/* A column, so the repo link can claim the leftover height with
+   margin-top:auto. Children are fixed at their own height, or the flex
+   container squeezes them to fit instead of letting the panel scroll. */
+#panel {
+  width: 388px;
+  min-width: 388px;
+  display: flex; flex-direction: column;
+  overflow-y: auto;
+  background: var(--panel);
+  border-right: 1px solid var(--line);
+  /* Little at the foot: the repo link sits on the bottom edge. */
+  padding: 22px 22px 12px;
+}
+#panel > * { flex: 0 0 auto; }
+
+/* The map and what floats over it. On a desktop the search and the session list
+   are positioned on top; on a phone they drop below it. */
+#stage {
+  flex: 1; min-width: 0; min-height: 0;
+  position: relative;
+  display: flex; flex-direction: column;
+}
+#map { flex: 1; min-height: 0; }
+
+/* ------------------------------------------------------------------ brand */
+#panel > header { margin-bottom: 18px; }
+.brand { display: flex; align-items: center; min-width: 0; }
+.brand h1 {
+  margin: 0;
+  font-family: "Space Grotesk", "Segoe UI", system-ui, sans-serif;
+  font-size: 22px; font-weight: 600; letter-spacing: -0.015em;
+  white-space: nowrap;
+}
+/* The R: stem cap-high on the text baseline, dot hanging below like a pin. */
+.logo {
+  width: 0.86em; height: 1.12em;
+  vertical-align: -0.19em;
+  margin-right: -0.02em;   /* tucked against the o; the glyph box has slack */
+  color: var(--accent);
+  fill: none; stroke: currentColor; stroke-width: 2.9;
+  stroke-linecap: round; stroke-linejoin: round;
+}
+.logo-dot { fill: currentColor; stroke: none; }
+
+/* --------------------------------------------------------- floating cards */
+/* Tools then place search. Width left at max-content rather than clamped to the
+   stage, so layoutOverlays() can measure what the bar wants instead of letting
+   it silently crush the search box. */
+#topbar {
+  position: absolute;
+  z-index: 500;
+  top: 14px; left: 50%;
+  transform: translateX(-50%);
+  display: flex; align-items: center;
+  width: max-content;
+  padding: 4px;
+}
+.card {
+  background: var(--glass);
+  backdrop-filter: blur(8px);
+  border: 1px solid var(--line-2);
+  border-radius: 12px;
+  box-shadow: var(--shadow-lg);
+}
+
+/* --------------------------------------------------- picker and search */
+/* One piece, because on a narrow window they leave the bar together (see "the
+   finder steps outside"). display:contents generates no box, so the bar lays
+   out and measures as if the picker and search were its own children. */
+.findbar { display: contents; }
+
+/* ------------------------------------------------------------ place search */
+.search {
+  display: flex; align-items: center; gap: 6px;
+  min-width: 0; padding-left: 8px;
+}
+.search-icon {
+  width: 15px; height: 15px; flex: 0 0 auto;
+  color: var(--ink-3);
+  fill: none; stroke: currentColor; stroke-width: 1.9;
+  stroke-linecap: round; stroke-linejoin: round;
+}
+/* Fixed, not flexible: a field that shrinks would hide the bar running out of
+   room, which is the signal the layout runs on. */
+.search input {
+  width: 190px; flex: 0 0 auto;
+  font: inherit; font-size: 13px;
+  color: var(--ink); background: transparent;
+  border: 0; padding: 6px 0;
+}
+.search input::placeholder { color: var(--ink-3); }
+.search input:focus { outline: 0; }
+.search.searching .search-icon { animation: pulse 1s ease-in-out infinite; }
+.search.missed input { color: var(--bad); }
+@keyframes pulse { 50% { opacity: 0.3; } }
+.search-go {
+  flex: 0 0 auto;
+  display: grid; place-items: center;
+  width: 30px; height: 30px; padding: 0;
+  color: var(--ink-2); background: transparent;
+  border: 0; border-radius: 8px; cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.search-go:hover { background: var(--hover); color: var(--ink); }
+.search-go svg {
+  width: 16px; height: 16px;
+  fill: none; stroke: currentColor; stroke-width: 1.9;
+  stroke-linecap: round; stroke-linejoin: round;
+}
+
+/* ------------------------------------------------------------ map picker */
+/* Built rather than a native <select>, whose popup is an OS window and keeps
+   its own corners and highlight colour whatever the page asks for. */
+.basemap { position: relative; padding-left: 8px; }
+.basemap-button {
+  display: flex; align-items: center; gap: 5px;
+  padding: 6px 6px 6px 0;
+  font: inherit; font-size: 13px; font-weight: 520;
+  color: var(--ink-2);
+  background: transparent; border: 0; border-radius: 8px;
+  cursor: pointer;
+  transition: color 0.12s ease;
+}
+.basemap-button:hover { color: var(--ink); }
+.basemap-button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.basemap-button span {
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.basemap-icon, .basemap-chevron {
+  flex: 0 0 auto;
+  fill: none; stroke: currentColor; stroke-width: 1.7;
+  stroke-linecap: round; stroke-linejoin: round;
+}
+.basemap-icon { width: 15px; height: 15px; }
+.basemap-chevron { width: 14px; height: 14px; color: var(--ink-3); }
+[aria-expanded="true"] .basemap-chevron { transform: rotate(180deg); }
+
+/* Wide enough for the longest name rather than sized to the button, which is
+   what made the native one look pinched. Anchored left; the picker is mid-bar. */
+.basemap-list {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 9px); left: 0;
+  min-width: max-content;
+  margin: 0; padding: 4px;
+  list-style: none;
+  background: var(--glass);
+  backdrop-filter: blur(8px);
+  border: 1px solid var(--line-2);
+  border-radius: 12px;
+  box-shadow: var(--shadow-lg);
+}
+.basemap-list li {
+  padding: 7px 12px;
+  font-size: 13px; font-weight: 520;
+  color: var(--ink-2);
+  white-space: nowrap;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.basemap-list li:hover { background: var(--hover); color: var(--ink); }
+/* The chosen one, in the accent the bar uses for "this is on". */
+.basemap-list li[aria-selected="true"] {
+  color: var(--accent);
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1.5px var(--accent);
+}
+.basemap-list li.cursor:not([aria-selected="true"]) {
+  background: var(--hover); color: var(--ink);
+}
+
+/* ------------------------------------------------------- map tool bar */
+.toolbar { display: flex; gap: 3px; }
+.tool {
+  position: relative;
+  display: flex; align-items: center; gap: 6px;
+  padding: 7px 12px;
+  font: inherit; font-size: 13px; font-weight: 520;
+  color: var(--ink-2);
+  background: transparent; border: 0; border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.tool:hover { background: var(--hover); color: var(--ink); }
+/* Hairlines, so seven buttons read as five groups. */
+.tool-sep {
+  flex: 0 0 auto; align-self: stretch;
+  width: 1px; margin: 3px 2px;
+  background: var(--line-2);
+}
+.tool.active { background: var(--accent); color: var(--on-accent); }
+.tool svg {
+  width: 17px; height: 17px; flex: 0 0 auto;
+  fill: none; stroke: currentColor; stroke-width: 1.7;
+  stroke-linecap: round; stroke-linejoin: round;
+}
+/* A start is on the map, so the pin glyph wears the accent. Not while the tool
+   is armed - the button is accent-filled and the glyph would vanish into it. */
+.tool.has-start:not(.active) svg { color: var(--accent); }
+/* Filled, the way Subtract is filled when it is armed: the two buttons that
+   take something away answer to the same red. */
+.tool.danger:hover:not(:disabled) { background: var(--bad); color: var(--on-bad); }
+.tool:disabled { opacity: 0.38; cursor: default; }
+.tool:disabled:hover { background: transparent; color: var(--ink-2); }
+
+/* ------------------------------------------------------------ map alert */
+/* Over the stage only, so the panel stays readable while the map, the tool bar
+   and the session list go dark behind the box. Under the alert, over the rest. */
+.map-scrim {
+  position: absolute; inset: 0;
+  z-index: 590;
+  background: rgba(0, 0, 0, 0.5);
+}
+
+/* Centred on the map and stays until dismissed: loading a file is deliberate,
+   so the answer belongs where you are looking. Above the top bar's z-index.
+
+   The panel's own surface rather than a colour of its own - it is the same
+   program talking, and a box that changes its skin to raise its voice reads as
+   something that arrived from outside. Red is spent on the two places that
+   carry meaning: the warning mark, always, and the border when this is a
+   failure rather than a question. */
+.map-alert {
+  position: absolute;
+  z-index: 600;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  display: grid; justify-items: center; gap: 12px;
+  width: min(400px, calc(100% - 32px));
+  padding: 22px 24px;
+  text-align: center;
+  background: var(--glass);
+  backdrop-filter: blur(8px);
+  border: 1px solid var(--line-2); border-radius: 12px;
+  box-shadow: var(--shadow-lg);
+}
+/* The border is the one word the box says before it is read: red for something
+   that went wrong, the accent for something being asked. */
+.map-alert:not(.asking) { border-color: var(--bad); }
+.map-alert.asking { border-color: var(--accent); }
+.map-alert svg {
+  width: 26px; height: 26px;
+  color: var(--bad);
+  fill: none; stroke: currentColor; stroke-width: 1.7;
+  stroke-linecap: round; stroke-linejoin: round;
+}
+/* Only where something has gone wrong. A question is not a warning: the box is
+   asking, and the answer is the two buttons under it. */
+.map-alert.asking svg { display: none; }
+.map-alert p {
+  margin: 0;
+  font-size: 13px; line-height: 1.55;
+  color: var(--ink);
+}
+/* Something went wrong, so the sentence saying so carries it too - but only the
+   sentence. The button below is still just a way out, and reads as one. */
+.map-alert:not(.asking) p { color: var(--bad); }
+
+.map-alert-actions { display: flex; gap: 8px; margin-top: 2px; }
+/* Outlined by default, because backing out and shrugging an error off are the
+   same quiet answer and neither should be the thing the eye lands on. */
+.map-alert button {
+  font: inherit; font-size: 13px; font-weight: 560;
+  color: var(--ink);
+  background: transparent;
+  border: 1px solid var(--line-2); border-radius: 8px;
+  padding: 7px 16px;
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+}
+.map-alert button:hover { background: var(--hover); border-color: var(--ink-3); }
+.map-alert button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* Only where there is something to go through with. Dismissing an error is not
+   that, so it keeps the outline above. */
+.map-alert.asking #map-alert-close {
+  color: var(--on-accent); background: var(--accent); border-color: var(--accent);
+  box-shadow: var(--shadow);
+}
+.map-alert.asking #map-alert-close:hover {
+  background: var(--accent-2); border-color: var(--accent-2);
+}
+
+/* -------------------------------------------------------------- dropzone */
+/* Dashed rather than solid, the one border convention that reads as "put
+   something here" rather than "press me". The whole rectangle is the target: a
+   small button is a poor thing to aim a dragged file at. */
+.dropzone {
+  display: grid; justify-items: center; gap: 2px;
+  /* Keeps it off the Area and Start tiles below. */
+  margin-bottom: 18px; padding: 18px 14px;
+  text-align: center;
+  color: var(--ink-3);
+  background: transparent;
+  border: 1px dashed var(--line-2); border-radius: var(--r);
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+}
+.dropzone:hover { background: var(--panel-2); border-color: var(--ink-3); }
+.dropzone:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* Held over the target, so it is clear where the file is about to land. */
+.dropzone.over {
+  background: var(--accent-soft);
+  border-color: var(--accent); border-style: solid;
+  color: var(--accent);
+}
+.dropzone svg {
+  width: 20px; height: 20px; margin-bottom: 2px;
+  fill: none; stroke: currentColor; stroke-width: 1.7;
+  stroke-linecap: round; stroke-linejoin: round;
+}
+.dropzone-title { font-size: 13px; font-weight: 560; color: var(--ink-2); }
+.dropzone.over .dropzone-title { color: var(--accent); }
+.dropzone-hint { font-size: 11.5px; }
+.dropzone.busy { opacity: 0.6; cursor: progress; }
+
+/* ------------------------------------------------------------ repo link */
+/* A credit, not a control: quietest ink until pointed at. The mark is filled
+   rather than stroked like the other icons because it is GitHub's own.
+   margin-top:auto takes the leftover height; the padding is the floor for when
+   the form fills the panel and there is none. */
+.repo-link {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  margin-top: auto; padding-top: 28px;
+  font-size: 12.5px; font-weight: 520;
+  color: var(--ink-3); text-decoration: none;
+  transition: color 0.12s ease;
+}
+.repo-link:hover { color: var(--accent); }
+.repo-link:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 4px;
+}
+.repo-link svg {
+  width: 16px; height: 16px; flex: 0 0 auto;
+  fill: currentColor; stroke: none;
+}
+/* The release, inside the same link and in the same ink. The dot is drawn here
+   rather than written into the markup so an empty version leaves no orphan. */
+.repo-version:not(:empty) { font-weight: 440; }
+.repo-version:not(:empty)::before { content: '·'; margin-right: 8px; }
+
+/* ------------------------------------------------------------- start pin */
+.start-pin svg {
+  width: 60px; height: 60px;
+  fill: var(--zone);
+  stroke: var(--pin-ring); stroke-width: 1.6;
+  stroke-linejoin: round;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.45));
+}
+.start-pin circle { fill: var(--pin-ring); stroke: none; }
+
+/* ---------------------------------------------------------------- tiles */
+.tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.tiles + .tiles { margin-top: 8px; }
+.tile {
+  padding: 9px 11px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  min-width: 0;
+}
+.tile.accent { background: var(--accent-soft); border-color: var(--accent-line); }
+.tile-label {
+  display: block; font-size: 10.5px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.05em; color: var(--ink-3);
+}
+.tile-value {
+  display: block; margin-top: 2px;
+  font-size: 15px; font-weight: 560;
+  font-variant-numeric: tabular-nums;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.tiles.four .tile-value { font-size: 17px; }
+.muted { color: var(--ink-3); font-weight: 400; }
+
+/* --------------------------------------------------------------- blocks */
+.block { margin-top: 24px; }
+.block h2 {
+  margin: 0 0 12px;
+  font-size: 11px; font-weight: 650;
+  text-transform: uppercase; letter-spacing: 0.07em;
+  color: var(--ink-3);
+}
+
+.hint { margin: 10px 0 0; font-size: 12.5px; color: var(--ink-2); }
+
+/* -------------------------------------------------------------- buttons */
+.primary {
+  display: block;
+  width: 100%; margin-top: 22px; padding: 12px;
+  font: inherit; font-size: 15px; font-weight: 580;
+  color: var(--on-accent); background: var(--accent);
+  border: 0; border-radius: var(--r);
+  cursor: pointer; box-shadow: var(--shadow);
+  transition: background 0.12s ease, opacity 0.12s ease;
+}
+.primary:hover:not(:disabled) { background: var(--accent-2); }
+.primary:disabled { opacity: 0.4; cursor: not-allowed; box-shadow: none; }
+
+/* --------------------------------------------------------------- inputs */
+.field { display: block; }
+.field + .field, .field + .switch, .segmented + .field { margin-top: 16px; }
+.block > .field:not(:last-child) { margin-bottom: 16px; }
+.field > span {
+  display: block; font-size: 12px; color: var(--ink-2); margin-bottom: 5px;
+}
+.field input {
+  width: 100%; font: inherit; padding: 8px 10px;
+  color: var(--ink); background: var(--field-bg);
+  border: 1px solid var(--line-2); border-radius: var(--r-sm);
+  font-variant-numeric: tabular-nums;
+}
+.field input:focus {
+  outline: 0; border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--focus);
+}
+.field input.invalid {
+  border-color: var(--bad); box-shadow: 0 0 0 3px var(--bad-soft);
+}
+
+/* ---------------------------------------------------------- segmented */
+.segmented {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 3px;
+  padding: 3px;
+  background: var(--hover); border-radius: var(--r-sm);
+}
+.segmented label { display: block; position: relative; cursor: pointer; }
+.segmented input { position: absolute; opacity: 0; pointer-events: none; }
+.segmented span {
+  display: block; padding: 7px 6px; text-align: center;
+  font-size: 13px; font-weight: 520; color: var(--ink-2);
+  border-radius: 5px;
+  transition: background 0.12s ease, color 0.12s ease, box-shadow 0.12s ease;
+}
+.segmented label:hover span { color: var(--ink); }
+.segmented input:checked + span {
+  background: var(--accent); color: var(--on-accent); font-weight: 580;
+  box-shadow: var(--shadow);
+}
+.segmented label:hover input:checked + span { color: var(--on-accent); }
+.segmented input:focus-visible + span { box-shadow: 0 0 0 3px var(--focus); }
+.segmented input:disabled + span { opacity: 0.35; }
+.segmented label:has(input:disabled) { cursor: default; }
+.segmented label:hover input:disabled + span { color: var(--ink-2); }
+
+/* The two one-of-N groups in the tool bar: which tool, and what that tool does.
+   Both sit in a recessed track rather than floating loose like Start and Clear,
+   because in each of them exactly one answer is live at a time. Sized to the
+   loose buttons, so the row of them keeps one height. */
+.tool-group, .bar-seg {
+  align-self: center;
+  padding: 2px;
+  background: var(--field-bg); border-radius: var(--r-sm);
+}
+.tool-group { display: flex; gap: 2px; }
+.tool-group .tool { padding: 5px 10px; border-radius: 6px; }
+
+/* Flowing by column rather than a fixed count, so the group stays one row
+   whatever is in it - a third op wrapped a two-column track onto two lines. */
+.bar-seg {
+  margin-left: 4px;
+  grid-auto-flow: column; grid-template-columns: none; gap: 2px;
+}
+.bar-seg span {
+  display: flex; align-items: center; gap: 6px;
+  padding: 5px 10px;
+  font-size: 13px; font-weight: 520;
+  border-radius: 6px;
+}
+.bar-seg b { font-weight: inherit; }
+.bar-seg svg {
+  width: 17px; height: 17px; flex: 0 0 auto;
+  fill: none; stroke: currentColor; stroke-width: 1.9;
+  stroke-linecap: round; stroke-linejoin: round;
+}
+#op-subtract:checked + span { background: var(--bad); color: var(--on-bad); }
+.bar-seg label:hover #op-subtract:checked + span { color: var(--on-bad); }
+
+/* ----------------------------------------------------------- road fixer */
+/* The editor has no panel of its own. The streets carry their state as colour
+   and clicking one opens its card on the street itself, so everything here
+   dresses something on the map. The card is a panel block that happens to float
+   over the map: same .card shell, same .field label, same .segmented control,
+   so nothing in it is a one-off. */
+.road-popup .leaflet-popup-content-wrapper {
+  padding: 0;
+  color: var(--ink); background: var(--glass);
+  border: 1px solid var(--line-2); border-radius: 12px;
+  box-shadow: var(--shadow-lg);
+  -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
+}
+.road-popup .leaflet-popup-content { margin: 0; font: inherit; line-height: 1.55; }
+/* No fade in or out. Leaflet gives its popups 200 ms of opacity either way,
+   which on a card that answers a click is 200 ms of not being able to read it -
+   and 200 ms of a stale one still there after the next street is picked.
+   Leaflet's own opacity values are set inline and so still land; taking the
+   transition away is what makes them land at once. Three classes, to outrank
+   the rule in leaflet.css that puts the transition there. */
+.leaflet-fade-anim .leaflet-map-pane .road-popup { transition: none; }
+/* Leaflet's tip is a rotated square with a shadow of its own, and no border can
+   follow it round the corner. Painted flat in the panel colour instead. */
+.road-popup .leaflet-popup-tip { background: var(--panel-2); box-shadow: none; }
+/* Hung under the street instead of over it, because the tool bar or the top of
+   the map was in the way. The container is a 40x20 window onto a rotated
+   square; turning the window over points the arrow the other way. */
+.road-popup.below .leaflet-popup-tip-container {
+  top: -20px; margin-top: 0; transform: rotate(180deg);
+}
+/* Slid sideways to stay on the map, so the arrow points at nothing. */
+.road-popup.nudged .leaflet-popup-tip-container { display: none; }
+.road-card { padding: 13px 15px 14px; min-width: 210px; }
+.road-card-name { font-size: 13.5px; font-weight: 640; color: var(--ink); }
+.road-card-meta { margin-top: 1px; font-size: 12px; color: var(--ink-3); }
+/* One under the other: three answers, and the longest of them does not fit
+   across a card this wide. */
+.road-card .segmented { margin-top: 12px; grid-template-columns: 1fr; }
+.road-card .segmented span { padding: 6px 8px; }
+/* The live answer wears the colour its street is drawn in, not the panel's
+   accent - the same trick the tool bar plays with Subtract, and here it is what
+   ties the control to the line it is about. */
+.road-card .segmented input:checked + span,
+.road-card .segmented label:hover input:checked + span { color: var(--on-drive); }
+.road-card .segmented input[value="cover"]:checked + span { background: var(--drive-cover); }
+.road-card .segmented input[value="access"]:checked + span,
+.road-card .segmented label:hover input[value="access"]:checked + span {
+  background: var(--drive-access); color: var(--on-drive-access);
+}
+.road-card .segmented input[value="never"]:checked + span { background: var(--drive-never); }
+
+/* Leaflet paints every link inside its container, and does it with one class
+   and one type - so this has to carry two classes to outrank it. */
+.road-popup .road-card-link {
+  display: inline-block; margin-top: 10px;
+  font-size: 11.5px; color: var(--ink-3); text-decoration: none;
+}
+.road-popup .road-card-link:hover { color: var(--accent); text-decoration: underline; }
+
+
+/* --------------------------------------------------------------- switch */
+.switch {
+  display: flex; gap: 10px; align-items: center;
+  margin-bottom: 16px; cursor: pointer; user-select: none;
+}
+.switch input { position: absolute; opacity: 0; pointer-events: none; }
+.switch .track {
+  flex: 0 0 auto; position: relative;
+  width: 36px; height: 21px; border-radius: 11px;
+  background: var(--line-2); transition: background 0.16s ease;
+}
+.switch .track::after {
+  content: ""; position: absolute; top: 3px; left: 3px;
+  width: 15px; height: 15px; border-radius: 50%; background: #fff;
+  transition: transform 0.16s ease;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+.switch input:checked + .track { background: var(--accent); }
+.switch input:checked + .track::after { transform: translateX(15px); }
+.switch input:focus-visible + .track { box-shadow: 0 0 0 3px var(--focus); }
+.switch-label { font-size: 13.5px; font-weight: 520; }
+
+/* ------------------------------------------------------------- info tips */
+/* A filled disc with the i knocked out of it, after the label. Filled and not
+   outlined on purpose: the same glyph as a 1.2px-stroke ring was a smudge at
+   this size, while a hole in a solid shape keeps its shape however small.
+   Yellow rather than the accent, which means a thing is switched on. */
+.info {
+  display: inline-flex; vertical-align: -2.5px;
+  margin-left: 5px; padding: 0;
+  color: var(--warn);
+  background: transparent; border: 0; border-radius: 50%;
+  cursor: help;
+  transition: color 0.12s ease;
+}
+.info svg { width: 13px; height: 13px; fill: currentColor; stroke: none; }
+.info:hover { color: var(--warn-2); }
+.info:focus-visible { outline: 2px solid var(--warn); outline-offset: 1px; }
+/* The tile label is 10.5px, so its marker comes down to match. */
+.tile-label .info { vertical-align: -2px; }
+.tile-label .info svg { width: 12px; height: 12px; }
+
+/* One bubble for the lot, placed by showTip(). pointer-events off so it cannot
+   sit under the pointer and flicker the marker's own hover off. */
+.tip {
+  position: fixed; z-index: 700;
+  max-width: 250px; padding: 9px 11px;
+  font-size: 12px; line-height: 1.45; font-weight: 420;
+  color: var(--ink);
+  background: var(--bg);
+  border: 1.5px solid var(--accent); border-radius: 9px;
+  box-shadow: var(--shadow-lg);
+  pointer-events: none;
+}
+
+/* ------------------------------------------------------------- progress */
+.progress { margin-top: 14px; }
+.bar { height: 5px; border-radius: 3px; background: var(--line); overflow: hidden; }
+.fill {
+  height: 100%; width: 0; border-radius: 3px;
+  background: var(--accent); transition: width 0.3s ease;
+}
+.fill.indeterminate { width: 34%; animation: slide 1.15s ease-in-out infinite alternate; }
+@keyframes slide { from { margin-left: 0; } to { margin-left: 66%; } }
+.progress-text { margin-top: 7px; font-size: 12.5px; color: var(--ink-2); }
+
+.hidden { display: none !important; }
+
+.leaflet-container { background: var(--map-bg); }
+
+/* OSM publishes no dark tiles, so its dark option is the daylight tile turned
+   inside out: invert the ground, half-turn the hue to put water back to blue,
+   then lift and desaturate, since a straight inversion is a photo negative
+   rather than a map. Every POI icon survives, which a purpose-built dark style
+   would lose. Only the tile pane: routes, zones and pins keep their colours. */
+:root[data-tiles="inverted"] .leaflet-tile-pane {
+  filter: invert(1) hue-rotate(180deg) brightness(1.15) contrast(0.78) saturate(0.5);
+}
+
+/* Leaflet gives every drawn path `cursor: pointer`, saying "click me" right
+   where you are starting the next zone. Paths included. */
+#map.drawing,
+#map.drawing .leaflet-interactive { cursor: crosshair; }
+/* A finger drawing a zone must not also scroll the page or pinch the map. */
+#map.drawing { touch-action: none; }
+/* The cursor is the pin itself, tip on the hotspot. A cursor is a data URI, not
+   a styleable element, so each basemap needs its own ring colour. */
+#map.pinning,
+#map.pinning .leaflet-interactive {
+  cursor: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='34'%20height='34'%20viewBox='0%200%2024%2024'%3E%3Cpath%20d='M12%2021s6.5-6.2%206.5-11a6.5%206.5%200%201%200-13%200C5.5%2014.8%2012%2021%2012%2021z'%20fill='%2335d29a'%20stroke='%230b1a15'%20stroke-width='1.5'/%3E%3Ccircle%20cx='12'%20cy='10'%20r='2.6'%20fill='%230b1a15'/%3E%3C/svg%3E") 17 30, crosshair;
+}
+:root[data-map="light"] #map.pinning,
+:root[data-map="light"] #map.pinning .leaflet-interactive {
+  cursor: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='34'%20height='34'%20viewBox='0%200%2024%2024'%3E%3Cpath%20d='M12%2021s6.5-6.2%206.5-11a6.5%206.5%200%201%200-13%200C5.5%2014.8%2012%2021%2012%2021z'%20fill='%230b8f68'%20stroke='%23ffffff'%20stroke-width='1.5'/%3E%3Ccircle%20cx='12'%20cy='10'%20r='2.6'%20fill='%23ffffff'/%3E%3C/svg%3E") 17 30, crosshair;
+}
+/* The selector: a pointer, so the map reads as a list of streets to click
+   rather than a surface to draw on. A plain one - a data-URI cursor over
+   Leaflet's drag layer left the map stuck to the pointer. */
+#map.selecting,
+#map.selecting .leaflet-interactive { cursor: pointer; }
+/* Held middle or right mouse button: a temporary grab, whatever tool is armed. */
+#map.grabbing,
+#map.grabbing .leaflet-interactive { cursor: grabbing; }
+/* ... but the panels beside and over the map are still controls. */
+#stage #topbar, #stage #findbar, #stage #search, #stage .legend { cursor: default; }
+#stage .tool, #stage .legend-item, #stage .search-go { cursor: pointer; }
+#stage .search input { cursor: text; }
+
+/* ------------------------------------------------------ leaflet controls */
+.leaflet-control-attribution { background: var(--panel); color: var(--ink-2); }
+.leaflet-control-attribution a { color: var(--accent); }
+
+/* --------------------------------------------- route arrows and dots */
+/* One canvas, drawn by detail.js. Nothing on it is a control. */
+.route-detail { pointer-events: none; }
+
+/* ------------------------------------------------------ session legend */
+.legend {
+  position: absolute;
+  z-index: 500;
+  top: 14px;
+  right: 14px;
+  width: 200px;
+  max-height: calc(100% - 28px);
+  padding: 4px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: var(--glass);
+  backdrop-filter: blur(8px);
+  border: 1px solid var(--line-2);
+  border-radius: 12px;
+  box-shadow: var(--shadow-lg);
+}
+.legend-item {
+  display: flex; align-items: center; gap: 9px;
+  width: 100%; padding: 7px 10px 7px 8px;
+  font: inherit; text-align: left;
+  color: var(--ink);
+  background: transparent; border: 0; border-radius: 8px;
+  transition: background 0.12s ease;
+}
+/* Accent border and tint: a shade of the glass alone is too close to see. */
+.legend-item:hover, .legend-item.active {
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1.5px var(--accent);
+}
+/* Pinned by a click, so it survives the pointer moving away. */
+.legend-item.pinned {
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1.5px var(--accent);
+}
+.legend-item.pinned .legend-name { font-weight: 680; color: var(--accent); }
+.legend-item:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+/* The whole route, above the list it totals. Its stripe stays uncoloured - it
+   stands for every colour under it - and the hairline is drawn beside the
+   button, so neither the hover ring nor the row's height moves when it lights
+   up. */
+.legend-all { position: relative; margin-bottom: 5px; }
+.legend-all::after {
+  content: '';
+  position: absolute; left: 8px; right: 10px; bottom: -3px;
+  height: 1px; background: var(--line-2);
+}
+.legend-all .legend-name { font-weight: 600; }
+/* A stripe down the left rather than a chip beside the label: it answers the
+   line drawn on the map, and it lets the text start a good deal further left
+   than an 11px square did. Stretched, so it runs the height of the row's text
+   however long the name wraps. */
+.legend-item .stripe {
+  flex: 0 0 auto; align-self: stretch;
+  width: 3px; border-radius: 2px;
+}
+.legend-text { min-width: 0; }
+.legend-name {
+  display: block; font-size: 12.5px; font-weight: 480;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.legend-item.active .legend-name { font-weight: 680; }
+.legend-meta {
+  display: block; font-size: 11px; color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ------------------------------------------------- the bar giving way */
+/* Three steps, each switched on by layoutOverlays() once it has measured that
+   the bar no longer clears the session list. First, tools drop their labels. */
+#stage.tools-tight .tool span { display: none; }
+#stage.tools-tight .tool { padding: 8px 10px; }
+#stage.tools-tight .tool-sep { margin: 3px 0; }
+/* The plus, the minus and the cross carry it once the words go. Both tracks
+   lose the same 2px a side, so the bar still reads as one height. */
+#stage.tools-tight .bar-seg b { display: none; }
+#stage.tools-tight .bar-seg span,
+#stage.tools-tight .tool-group .tool { padding: 6px 8px; }
+
+/* Then the bar gives up the centre: the sessions are in the right corner, so
+   the room left is all on the left. */
+#stage.tools-left #topbar { left: 14px; transform: none; }
+
+/* Third step is .app-stacked below: the panel goes above the map and hands the
+   stage its whole 388px, nearly always more than the bar was short by. */
+
+/* --------------------------------------------------------- touch devices */
+/* Set from script off (pointer: coarse). Overlay scrollbars appear only while a
+   finger moves, so a panel of settings looks like the whole form with no hint
+   of a fold. On touch they get a permanent track. */
+.is-touch #panel, .is-touch .legend {
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-2) transparent;
+}
+.is-touch #panel::-webkit-scrollbar { width: 8px; }
+.is-touch .legend::-webkit-scrollbar { height: 8px; }
+.is-touch #panel::-webkit-scrollbar-track,
+.is-touch .legend::-webkit-scrollbar-track { background: transparent; }
+.is-touch #panel::-webkit-scrollbar-thumb,
+.is-touch .legend::-webkit-scrollbar-thumb {
+  background: var(--line-2); border-radius: 4px;
+  border: 2px solid transparent; background-clip: content-box;
+}
+
+/* ------------------------------------------------------- stacked layout */
+/* The phone shape, and what a narrow desktop window falls back to: panel above
+   the map, so the map spans the window. Switched on by layoutOverlays(), by
+   measurement or unconditionally below the breakpoint. The bar and the sessions
+   keep floating over the map throughout. */
+.app-stacked #shell { flex-direction: column; }
+.app-stacked #panel {
+  width: 100%; min-width: 0; border-right: 0;
+  border-bottom: 1px solid var(--line);
+  max-height: 38%;
+  overflow-y: scroll;        /* not auto: keep the track, so the fold shows */
+  padding: 16px 16px 20px;
+}
+.app-stacked #stage { flex: 1 1 auto; }
+.app-stacked #map { min-height: 46vh; }
+
+/* Stacked, the bar is as wide as the window allows and the search box gives:
+   on a phone nothing fits the tools, a 190px field and the picker at once, and
+   a shrinking field beats a bar running off the screen. */
+.app-stacked #topbar {
+  width: auto;
+  max-width: calc(100% - 20px);
+  left: 10px; right: 10px;
+  transform: none;
+}
+.app-stacked .search { flex: 1 1 60px; }
+/* A floor: below this the placeholder no longer fits, so the bar overflows
+   instead - and that overflow is the signal layoutOverlays() reads. */
+.app-stacked .search input { width: auto; flex: 1 1 auto; min-width: 150px; }
+
+/* The bar spans the width now, so the sessions go under it. */
+.app-stacked .legend {
+  top: 66px;
+  max-height: calc(100% - 80px);
+}
+
+/* ----------------------------------------------- the finder steps outside */
+/* Narrower still, and the bar cannot hold the tools, the picker and a usable
+   search box at once. Picker and search do not need to be over the map - you
+   type into them - so they take a strip above it and the tools, icons by now,
+   keep the floating bar.
+
+   The strip is the same #findbar, moved in the DOM before #map in the stage's
+   column by layoutOverlays(), which moves it back when the window grows. A CSS
+   `order` cannot do it: the finder is a child of the bar, not a sibling of the
+   map. */
+#stage.find-above #findbar {
+  /* flex:0 0 auto, or the greedy map below squeezes the strip to a sliver. */
+  display: flex; align-items: center;
+  flex: 0 0 auto;
+  padding: 4px 10px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+  /* The picker's popup hangs over the floating bar directly below the strip.
+     Above the bar's 500, below the alert's 600. */
+  position: relative;
+  z-index: 550;
+}
+/* Its hairline led the picker off the tools; nothing is to its left now. */
+#stage.find-above #basemap-sep { display: none; }
+#stage.find-above .basemap { padding-left: 0; }
+/* The bar holds icons alone now, so it sits back in the middle - but it is
+   positioned against the stage, which now starts with the strip. --find-strip
+   is that strip's measured height, written by layoutOverlays() so the numbers
+   cannot rot if the field or picker change size. */
+#stage.find-above #topbar {
+  top: calc(var(--find-strip, 44px) + 14px);
+  left: 50%; right: auto;
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: calc(100% - 20px);
+}
+#stage.find-above .legend {
+  top: calc(var(--find-strip, 44px) + 66px);
+  max-height: calc(100% - var(--find-strip, 44px) - 80px);
+}
